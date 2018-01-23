@@ -60,6 +60,7 @@ const command_biasFixed = "~"
 const sratecommands = Dict(25600 =>'0', 12800 =>'1', 6400 =>'2', 3200 =>'3', 1600=>'4', 800=>'5', 400=>'6', 200=>'7')
 
 
+""" Send a command to the OpenBCI harware via the WiFI http server POST /command JSON interface """
 function postwrite(server, command)
     resp = post("$server/command"; json=Dict("command"=>command))
     if statuscode(resp) == 200
@@ -70,6 +71,7 @@ function postwrite(server, command)
 end
 
 
+""" The functions below all are specific calls to the postwrite function above ""
 stop(server) = postwrite(server,command_stop)           # stop streaming "s"
 softreset(server) = postwrite(server, "v")              # reset peripherals only
 start(server) = postwrite(server, command_startBinary)  # 'b', binary streaming should now start
@@ -91,12 +93,21 @@ detachshield(server) = postwrite(server, "}")
 resetshield(server) = postwrite(server,";")
 
 
+""" TODO: run impedence test. This is not well documented, will need to specify further later """
 function runimpedancetest(serveraddress)
     startimpedancetest(serveraddress)
     startimpedancetest(serveraddress)
 end
 
 
+"""
+    asyncsocketserver(serveraddress, portnum, packetchannel, timeout)
+Server task, run in separate task, gets stream of packets from the OpenBCI Wifi hardware 
+and sends back to main process via a channel
+serveraddress: in form of "http://111.222.333/" (used to restert if error)
+portnum: our port number the OpenBCI Wifi will connect to
+timeout: how long to wait before we decide to redo the socket
+"""
 function asyncsocketserver(serveraddress, portnum, packetchannel, timeout)
     timer = time()
     sequentialtimeouts = 0
@@ -152,21 +163,20 @@ end
     rawganglionboard
 Implement a raw OpenBCI WiFI shield connection.
 Args:
-ipnum       the ip number of the sheild
-portnum     the port number
-shieldname  the WiFi shield name
-timeout     seconds for a timeout error
-maxskip     maximum packets to skip
-impedance   true if impedance check to be done
-fs          sampling rate, usually 250 == SAMPLERATE
-latency     latency in microseconds, time between packets, default 15 msec
-logging     filename for logging to PC
-logSD       true if should log to SD card
+ipnum            the ip number of the WiFi shield
+portnum          the port number to which the shield will stream data
+timeout          seconds for a timeout error
+fs               sampling rate, usually 250 == SAMPLERATE
+latency          latency in microseconds, time between packets, default 15 msec
+locallogging     true if loglevel is to be info rather than warn
+logSD            true if should log to SD card
+useaccelerometer true if accelerometer data to be sent
+impedancetest    true if impedance check to be done
+maketestwave     true if test signal to be gererated
 """
 function rawganglionboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT, timeout=5,
-                          impedancetest=false, fs=250, useaccelerometer=false,
-                          maketestwave=false, latency=15000, locallogging=false,
-                          logSD=false)
+                           fs=250, latency=15000, locallogging=false, logSD=false,
+                           useaccelerometer=false, impedancetest=false, maketestwave=false)
     if locallogging
         Logging.configure(level=INFO)
         info("--- Logging starting session ---")
