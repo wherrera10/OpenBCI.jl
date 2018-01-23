@@ -313,6 +313,10 @@ function startBDFPluswritefile(json_idfile::String, signalcount::Int=4)
 end
 
 
+"""
+    setplustimenow
+Set time of the BDF+ file data being acquired to current time
+"""
 function setplustimenow(bdfh)
     datetime = now()
     bdfh.startdate_day = Dates.day(datetime)
@@ -409,7 +413,8 @@ function makeganglionrecord(rectime, packetchannel, acceldata, reclen)
 end
 
 
-nilfunc(rec) = info("Record done: length $(length(rec))")
+""" dummy function, will in practice do spike detection etc.  """
+nilfunc(bdfh, rec) = info("Record done: length $(length(rec))")
 
 
 function makeganglionbdfplus(path, ip_board, ip_ours; idfile="",
@@ -424,7 +429,7 @@ function makeganglionbdfplus(path, ip_board, ip_ours; idfile="",
     packettime = 0.0
     while pcount < maxpackets
         rec = makeganglionrecord(packettime, packetchannel, false, packetlen)
-        packetinspector(rec)
+        packetinspector(bdfh, rec)
         pcount += 1
         bdfh.BDFsignals[pcount,:] .= rec
         packettime += packetinterval
