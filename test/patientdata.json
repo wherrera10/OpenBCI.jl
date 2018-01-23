@@ -1,0 +1,13 @@
+{
+    "patientID": "",
+    "recording": "",
+    "patientcode": "7777777",
+    "gender": "M",
+    "birthdate": "01-Jan-2000"
+    "patientname": "EEG_Subject",
+    "patient_additional": "Sampling_Test",
+    "admincode": "00001",
+    "technician": "EEG_TECH",
+    "equipment": "OpenBCI_Ganglion",
+    "recording_additional": "Test_Run"
+}
