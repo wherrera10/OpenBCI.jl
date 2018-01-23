@@ -19,20 +19,38 @@ See http://docs.openbci.com/Hardware/03-Cyton_Data_Format#cyton-data-format-bina
 The ganglion data is same as cyton when hooked to wifi board except that only the
 first 4 channels have data, with others specified to be 0
 """
-const SAMPLERATE = 250.0        # Hz, the default fs for ganglion
-const STARTBYTE = 0xA0          # start of 33 byte data packet
-const ENDBYTE = 0xC0            # end of 33 byte data packet
-const INT24MINIMUM = -8388608   # digital minimum
-const INT24MAXIMUM =  8388607   # digital maximum
+const SAMPLERATE = 250.0         # Hz, the default fs for ganglion
+const STARTBYTE = 0xA0           # start of 33 byte data packet
+const ENDBYTE = 0xC0             # end of 33 byte data packet
+const DEFAULT_STREAM_PORT = 5020 # streaming port, obscure zenginkyo-1 is 5020
 
-# MCP3912 http://ww1.microchip.com/downloads/en/DeviceDoc/20005348A.pdf
-const scale_fac_uVolts_per_count = 1.2 * 8388607 * 1.5 * 51.0 # MCP3912 pdf, table 7
+
+#=
+  // Digital max and mins
+  private String bdf_digital_minimum_ADC_24bit = "-8388608"; // -1 * 2^23
+  private String bdf_digital_maximum_ADC_24bit = "8388607"; // 2^23 - 1
+  private String bdf_digital_minimum_ADC_12bit = "-2048"; // -1 * 2^11
+  private String bdf_digital_maximum_ADC_12bit = "2047"; // 2^11 - 1
+
+  // Physcial max and mins
+  private String bdf_physical_minimum_ADC_24bit = "-187500"; // 4.5 / 24 / (2^23) * 1000000 *  (2^23)
+  private String bdf_physical_maximum_ADC_24bit = "187500"; // 4.5 / 24 / (2^23) * 1000000 * -1 * (2^23)
+  private String bdf_physical_minimum_ADC_Accel = "-4";
+  private String bdf_physical_maximum_ADC_Accel = "4";
+
+  private String bdf_physical_minimum_ADC_24bit_ganglion = "-15686";
+  private String bdf_physical_maximum_ADC_24bit_ganglion = "15686";
+
+So microvolts per digital unit is 15686 / 8388607 = 0.001869917138805
+=#
+const INT24MINIMUM = -8388608    # digital minimum
+const INT24MAXIMUM =  8388607    # digital maximum
+const GANGLIONPHYSICALMINIMUM = -15686
+const GANGLIONPHYSICALMAXIMUM =  15686
 
 # accelerometer conversion factor
 const scale_fac_accel_G_per_count = 0.032  # 0.032 G or 32 mG per accelerometer unit
 
-# default port number for receiving streaming data: obscure zenginkyo-1 is 5020
-const DEFAULT_STREAM_PORT = 5020
 
 # Commands for in SDK http://docs.openbci.com/software/01-Open BCI_SDK
 const command_stop = "s"
@@ -84,11 +102,6 @@ detachshield(server) = postwrite(server, "}")
 resetshield(server) = postwrite(server,";")
 
 
-function configureganglion(serveraddress, portnum, fs, useaccelerometer, latency, logSD)
-
-end
-
-
 function runimpedancetest(serveraddress)
     startimpedancetest(serveraddress)
     startimpedancetest(serveraddress)
@@ -100,11 +113,11 @@ function asyncsocketserver(serveraddress, portnum, packetchannel, timeout)
     sequentialtimeouts = 0
     numberofgets = 1
     try
-        println("Entered server async code")
+        info("Entered server async code")
         while true
             server = listen(IPv4(0), portnum)
             wifisocket = accept(server)
-            println("socket service connected to ganglion board")
+            info("socket service connected to ganglion board")
             bytes = b""
             while isopen(wifisocket)
                 bytes = vcat(bytes,read(wifisocket,33))
@@ -140,7 +153,7 @@ function asyncsocketserver(serveraddress, portnum, packetchannel, timeout)
         end
     catch y
         info("Caught exception $y")
-        # the semaphore has been closed most likely
+        # either error or the channel to process the packets has been closed
         info("Exiting WiFi streaming task")
     end
 end
@@ -229,7 +242,7 @@ function rawganglionboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT, timeou
 end
 
 
-function startBDFPluswritefile(signalchannels, patientID="", recording="", patientcode="",
+function startBDFPluswritefile(signalchannels::Int, patientID="", recording="", patientcode="",
                                gender="", birthdate="", patientname="", patient_additional="",
                                admincode="", technician="", equipment="", recording_additional="")
     bdfh = BEDFPlus()
@@ -260,6 +273,46 @@ function startBDFPluswritefile(signalchannels, patientID="", recording="", patie
 end
 
 
+"""
+    startBDFPluswritefile(signalchannels, json_idfile)
+json_idfile is a file containing JSON formatted patient information.
+"""
+function startBDFPluswritefile(json_idfile::String, signalcount::Int=4)
+    patientID=""
+    recording=""
+    patientcode=""
+    gender=""
+    birthdate=""
+    patientname=""
+    patient_additional=""
+    admincode=""
+    technician=""
+    equipment=""
+    recording_additional=""
+    try
+        jfh = open(json_idfile, "r")
+        dict = JSON.parse(readstring(jfh))
+        close(jfh)
+        info("Using patient file ID information: $dict")
+        if haskey(dict, "patientID") patientID = dict["patientID"] end
+        if haskey(dict, "recording") recording = dict["recording"] end
+        if haskey(dict, "patientcode") patientcode = dict["patientcode"] end
+        if haskey(dict, "gender") gender = dict["gender"] end
+        if haskey(dict, "birthdate") birthdate = dict["birthdate"] end
+        if haskey(dict, "patientname") patientname = dict["patientname"] end
+        if haskey(dict, "patient_additional") patient_additional = dict["patient_additional"] end
+        if haskey(dict, "admincode") admincode = dict["admincode"] end
+        if haskey(dict, "technician") technician = dict["technician"] end
+        if haskey(dict, "recording_additional") recording_additional = dict["recording_additional"] end
+    catch y
+        warn("Error reading startBDFPluswritefile ID file $json_idfile: $y")
+    end
+    startBDFPluswritefile(signalcount, patientID, recording, patientcode,
+                               gender, birthdate, patientname, patient_additional,
+                               admincode, technician, equipment, recording_additional)
+end
+
+
 function setplustimenow(bdfh)
     datetime = now()
     bdfh.startdate_day = Dates.day(datetime)
@@ -276,7 +329,6 @@ end
 function ganglion4channelsignalparam(bdfh; smp_per_record=250,
                                      labels=["1", "2", "3", "4", "5"],
                                      transtype="active electrode", physdim="uV",
-                                     physmin=INT24MINIMUM, physmax=INT24MAXIMUM,
                                      prefilter="None")
     bdfh.signalparam = Array{ChannelParam,1}()
     for i in 1:5
@@ -284,10 +336,10 @@ function ganglion4channelsignalparam(bdfh; smp_per_record=250,
         parm.label = labels[i]
         parm.transducer = transtype
         parm.physdimension = physdim
-        parm.physmin = physmin
-        parm.physmax = physmax
-        parm.digmin = -8388608
-        parm.digmax = 8388607
+        parm.physmin = GANGLIONPHYSICALMINIMUM
+        parm.physmax = GANGLIONPHYSICALMAXIMUM
+        parm.digmin = INT24MINIMUM
+        parm.digmax = INT24MAXIMUM
         parm.smp_per_record = smp_per_record
         parm.prefilter= prefilter
         if i == 5
@@ -301,18 +353,18 @@ end
 
 
 """
-    makerecord
+    makeganglionrecord
 Make a single record from signals at time rectime after start of recording.
 Use the fifth (annotation) channel for the BDFPlus timestamp and for any accelerometer data.
 Record is of 1.0 sec, so if data rate is 250 Hz, five channels is
 3 bytes per datapoint * 250 * 5 = 3750 bytes. The wifi server, commandet driver process
 uses a separate task to fill a channel with the data in raw packet form to read here.
-We only write one averaged accelerometer reading per 1 second packet.
-Reclen must be multiple of 15 and should be a multiple of 30 to get best results.
+We only write one averaged accelerometer reading per packet.
+Reclen must be a multiple of 15 and should be a multiple of 30 to get best results.
 """
-function makerecord(rectime, packetchannel, acceldata, reclen)
+function makeganglionrecord(rectime, packetchannel, acceldata, reclen)
     if reclen % 15 != 0
-        throw("makerecord record length not multiple of 15")
+        throw("makeganglionrecord record length $reclen is not a multiple of 15")
     end
     siglen = div(reclen, 5)
     chan1 = zeros(UInt8, siglen)
@@ -335,7 +387,7 @@ function makerecord(rectime, packetchannel, acceldata, reclen)
         end
         # TODO: we can set the ganglion board to send button press data instead of accel data
         # this would be logged as a button press annotation in that record
-        # assumes accelerometer data is the standard non-time-stamped version
+        # We assume accelerometer data here is the standard non-time-stamped version
         if acceldata && data[33] == 0xC0 && findfirst(data[27:32]) > 0
             xaccel += reinterpret(Int16, data[27:28])
             yaccel += reinterpret(Int16, data[29:30])
@@ -354,12 +406,14 @@ function makerecord(rectime, packetchannel, acceldata, reclen)
     vcat(chan1,chan2,chan3,chan4,chan5)
 end
 
-nilfunc(rec) = (return length(rec))
 
-function makeganglionbdfplus(path, ip_board, ip_ours;
+nilfunc(rec) = info("Record done: length $(length(rec))")
+
+
+function makeganglionbdfplus(path, ip_board, ip_ours; idfile="",
                              packetinspector=nilfunc, packetlen=3750,
                              packetinterval=1.0, maxpackets=360)
-    bdfh = startBDFPluswritefile(4)
+    bdfh = (idfile == "") ? startBDFPluswritefile(4): startBDFPluswritefile(4, idfile) 
     ganglion4channelsignalparam(bdfh)
     bdfh.BDFsignals = zeros(Int32,(maxpackets,packetlen))
     packetchannel = rawganglionboard(ip_board, ip_ours, locallogging=true)
@@ -367,7 +421,7 @@ function makeganglionbdfplus(path, ip_board, ip_ours;
     pcount = 0
     packettime = 0.0
     while pcount < maxpackets
-        rec = makerecord(packettime, packetchannel, false, packetlen)
+        rec = makeganglionrecord(packettime, packetchannel, false, packetlen)
         packetinspector(rec)
         bdfh.BDFsignals[pcount,:] = rec
         packettime += packetinterval
@@ -383,4 +437,3 @@ end
 
 
 end # module
-
