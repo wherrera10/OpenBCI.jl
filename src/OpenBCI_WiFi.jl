@@ -1,7 +1,7 @@
 #=
 OpenBCI_WiFi.jl
 @Author: William Herrera
-@Version: 0.01
+@Version: 0.011
 @Copyright William Herrera, 2018
 @Created: 16 Jan 2018
 @Purpose: EEG WiFi routines using OpenBCI Arduino hardware
@@ -11,6 +11,7 @@ module OpenBCI_WiFi
 using Logging
 using EDFPlus
 using Requests
+using JSON
 import Requests: get, post, get_streaming
 
 
@@ -25,28 +26,16 @@ const ENDBYTE = 0xC0             # end of 33 byte data packet
 const DEFAULT_STREAM_PORT = 5020 # streaming port, obscure zenginkyo-1 is 5020
 
 
-#=
-  // Digital max and mins
-  private String bdf_digital_minimum_ADC_24bit = "-8388608"; // -1 * 2^23
-  private String bdf_digital_maximum_ADC_24bit = "8388607"; // 2^23 - 1
-  private String bdf_digital_minimum_ADC_12bit = "-2048"; // -1 * 2^11
-  private String bdf_digital_maximum_ADC_12bit = "2047"; // 2^11 - 1
-
-  // Physcial max and mins
-  private String bdf_physical_minimum_ADC_24bit = "-187500"; // 4.5 / 24 / (2^23) * 1000000 *  (2^23)
-  private String bdf_physical_maximum_ADC_24bit = "187500"; // 4.5 / 24 / (2^23) * 1000000 * -1 * (2^23)
-  private String bdf_physical_minimum_ADC_Accel = "-4";
-  private String bdf_physical_maximum_ADC_Accel = "4";
-
-  private String bdf_physical_minimum_ADC_24bit_ganglion = "-15686";
-  private String bdf_physical_maximum_ADC_24bit_ganglion = "15686";
-
-So microvolts per digital unit is 15686 / 8388607 = 0.001869917138805
-=#
+# So microvolts per digital unit is 15686 / 8388607 = 0.001869917138805
+const INT12MINIMUM = -2048
+const INT12MAXIMUM =  2047
 const INT24MINIMUM = -8388608    # digital minimum
 const INT24MAXIMUM =  8388607    # digital maximum
-const GANGLIONPHYSICALMINIMUM = -15686
-const GANGLIONPHYSICALMAXIMUM =  15686
+const CYTONPHYSICALMINIMUM = -187500
+const CYTONPHYSICALMAXIMUM =  187500
+const GANGLIONPHYSICALMINIMUM = -15686  # microvolts
+const GANGLIONPHYSICALMAXIMUM =  15686  # microvolts
+
 
 # accelerometer conversion factor
 const scale_fac_accel_G_per_count = 0.032  # 0.032 G or 32 mG per accelerometer unit
@@ -298,11 +287,12 @@ function startBDFPluswritefile(json_idfile::String, signalcount::Int=4)
         if haskey(dict, "recording") recording = dict["recording"] end
         if haskey(dict, "patientcode") patientcode = dict["patientcode"] end
         if haskey(dict, "gender") gender = dict["gender"] end
-        if haskey(dict, "birthdate") birthdate = dict["birthdate"] end
+        if haskey(dict, "birthdate") birthdate = uppercase(dict["birthdate"]) end
         if haskey(dict, "patientname") patientname = dict["patientname"] end
         if haskey(dict, "patient_additional") patient_additional = dict["patient_additional"] end
         if haskey(dict, "admincode") admincode = dict["admincode"] end
         if haskey(dict, "technician") technician = dict["technician"] end
+        if haskey(dict, "equipment") equipment = dict["equipment"] end
         if haskey(dict, "recording_additional") recording_additional = dict["recording_additional"] end
     catch y
         warn("Error reading startBDFPluswritefile ID file $json_idfile: $y")
@@ -344,6 +334,8 @@ function ganglion4channelsignalparam(bdfh; smp_per_record=250,
         parm.prefilter= prefilter
         if i == 5
             parm.annotation = true
+            parm.transducer=""
+            parm.prefilter = ""
         end
         push!(bdfh.signalparam, parm)
     end
@@ -412,8 +404,8 @@ nilfunc(rec) = info("Record done: length $(length(rec))")
 
 function makeganglionbdfplus(path, ip_board, ip_ours; idfile="",
                              packetinspector=nilfunc, packetlen=3750,
-                             packetinterval=1.0, maxpackets=360)
-    bdfh = (idfile == "") ? startBDFPluswritefile(4): startBDFPluswritefile(4, idfile) 
+                             packetinterval=1.0, maxpackets=72)
+    bdfh = (idfile == "") ? startBDFPluswritefile(4): startBDFPluswritefile(idfile, 4)
     ganglion4channelsignalparam(bdfh)
     bdfh.BDFsignals = zeros(Int32,(maxpackets,packetlen))
     packetchannel = rawganglionboard(ip_board, ip_ours, locallogging=true)
@@ -423,16 +415,18 @@ function makeganglionbdfplus(path, ip_board, ip_ours; idfile="",
     while pcount < maxpackets
         rec = makeganglionrecord(packettime, packetchannel, false, packetlen)
         packetinspector(rec)
-        bdfh.BDFsignals[pcount,:] = rec
-        packettime += packetinterval
         pcount += 1
+        bdfh.BDFsignals[pcount,:] .= rec
+        packettime += packetinterval
     end
+    bdfh.datarecords = maxpackets
     EDFPlus.writefile!(bdfh, path)
 end
 
 
 if PROGRAM_FILE == "OpenBCI_WiFi.jl"
-    makeganglionbdfplus("testfile.bdf", "192.168.1.25", "192.168.1.1")
+    makeganglionbdfplus("testfile.bdf", "192.168.1.25", "192.168.1.1",
+                         idfile="patientdata.json")
 end
 
 
