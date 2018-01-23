@@ -419,6 +419,7 @@ function makeganglionbdfplus(path, ip_board, ip_ours; idfile="",
         bdfh.BDFsignals[pcount,:] .= rec
         packettime += packetinterval
     end
+    bdfh.file_duration = Float64(maxpackets)
     bdfh.datarecords = maxpackets
     EDFPlus.writefile!(bdfh, path)
 end
