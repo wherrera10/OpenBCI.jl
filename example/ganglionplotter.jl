@@ -32,12 +32,12 @@ function plottwobipolars(bdfh, pcount, maxpackets)
         ydata = [Fp1T3, Fp2T4]
         timepoints = linspace(0.0, PLOTINTERVAL, length(Fp1T3))
         
-        plt = plot(timepoints, ydata, layout=(2,1),
+        plt = Plots.plot(timepoints, ydata, layout=(2,1),
                    xticks=collect(timepoints[1]:1:timepoints[end]), 
                    yticks=false, legend=false, title="Interval from $startrec to $pcount")
         plt[1][:xaxis][:showaxis] = false
-        plot!(yaxis=true, tight_layout=true, ylabel = "Fp1-T3", subplot=1)
-        plot!(yaxis=true, tight_layout=true, ylabel = "Fp2-T4", subplot=2)
+        Plots.plot!(yaxis=true, tight_layout=true, ylabel = "Fp1-T3", subplot=1)
+        Plots.plot!(yaxis=true, tight_layout=true, ylabel = "Fp2-T4", subplot=2)
         PyPlot.display(plt)   
     end
 end
