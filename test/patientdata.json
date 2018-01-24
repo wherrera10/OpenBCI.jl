@@ -3,7 +3,7 @@
     "recording": "",
     "patientcode": "7777777",
     "gender": "M",
-    "birthdate": "01-Jan-2000"
+    "birthdate": "01-Jan-2000",
     "patientname": "EEG_Subject",
     "patient_additional": "Sampling_Test",
     "admincode": "00001",
