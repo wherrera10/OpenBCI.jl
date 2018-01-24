@@ -43,6 +43,6 @@ function plottwobipolars(bdfh, pcount, maxpackets)
 end
 
 
-makeganglionbdfplus("examplefile.bdf", boardIP, myIP, idfile=idfile, 
+OpenBCI_WiFi.makeganglionbdfplus("examplefile.bdf", boardIP, myIP, idfile=idfile, 
                      packetinspector=plottwobipolars, maxpackets=120)
 
