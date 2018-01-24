@@ -1,7 +1,7 @@
 #=
 OpenBCI_WiFi.jl
 @Author: William Herrera
-@Version: 0.011
+@Version: 0.012
 @Copyright William Herrera, 2018
 @Created: 16 Jan 2018
 @Purpose: EEG WiFi routines using OpenBCI Arduino hardware
@@ -71,7 +71,7 @@ function postwrite(server, command)
 end
 
 
-""" The functions below all are specific calls to the postwrite function above ""
+""" The functions below all are specific calls to the postwrite function above """
 stop(server) = postwrite(server,command_stop)           # stop streaming "s"
 softreset(server) = postwrite(server, "v")              # reset peripherals only
 start(server) = postwrite(server, command_startBinary)  # 'b', binary streaming should now start
@@ -102,7 +102,7 @@ end
 
 """
     asyncsocketserver(serveraddress, portnum, packetchannel, timeout)
-Server task, run in separate task, gets stream of packets from the OpenBCI Wifi hardware 
+Server task, run in separate task, gets stream of packets from the OpenBCI Wifi hardware
 and sends back to main process via a channel
 serveraddress: in form of "http://111.222.333/" (used to restert if error)
 portnum: our port number the OpenBCI Wifi will connect to
@@ -345,6 +345,7 @@ function ganglion4channelsignalparam(bdfh; smp_per_record=250,
         parm.digmin = INT24MINIMUM
         parm.digmax = INT24MAXIMUM
         parm.smp_per_record = smp_per_record
+        parm.bufoffset = (i-1) * 3 * smp_per_record + 1
         parm.prefilter= prefilter
         if i == 5
             parm.annotation = true
@@ -388,8 +389,8 @@ function makeganglionrecord(rectime, packetchannel, acceldata, reclen)
         chan4[sigpos:sigpos+2] = data[12:14]
         if sigpos == 1
             timestamp = EDFPlus.trimrightzeros(string(rectime))
-            chan5[1:length(timestamp)+3] = Array{UInt8,1}("$timestamp\x14\x14\x00")
-            annotpos += (length(timestamp) + 3)
+            chan5[1:length(timestamp)+4] = Array{UInt8,1}("+$timestamp\x14\x14\x00")
+            annotpos += (length(timestamp) + 4)
         end
         # TODO: we can set the ganglion board to send button press data instead of accel data
         # this would be logged as a button press annotation in that record
@@ -406,24 +407,29 @@ function makeganglionrecord(rectime, packetchannel, acceldata, reclen)
         yax = round(32.0 * yaccel / numaccelpackets, 4)
         zax = round(32.0 * zaccel / numaccelpackets, 4)
         atime = EDFPlus.trimrightzeros(string(rectime + reclen/(SAMPLERATE*15* 2)))
-        annot = atime * "\x14$xax $yax $zax (x,y,z) accelerometer data in 1/1000 G units\x14"
+        annot = "+" * atime * "\x14$xax $yax $zax (x,y,z) accelerometer data in 1/1000 G units\x14\x00"
         chan5[annotpos:annotpos+length(annot)-1] .= Array{UInt8,1}(annot)
     end
-    vcat(chan1,chan2,chan3,chan4,chan5)
+    recbytes = vcat(chan1,chan2,chan3,chan4,chan5)
+    rec = Array{Int32,1}(div(reclen,3))
+    for i in 1:3:reclen-1
+        rec[div(i,3)+1] = Int(reinterpret(EDFPlus.Int24, recbytes[i:i+2])[1])
+    end
+    rec
 end
 
 
 """ dummy function, will in practice do spike detection etc.  """
-nilfunc(bdfh, rec) = info("Record $pcount of $maxpacketsreceived.")
+nilfunc(bdfh, pcount, maxpackets) = info("Record $pcount of $maxpackets received.")
 
 
 function makeganglionbdfplus(path, ip_board, ip_ours; idfile="",
                              packetinspector=nilfunc, packetlen=3750,
-                             packetinterval=1.0, maxpackets=72)
+                             packetinterval=1.0, maxpackets=30)
     bdfh = (idfile == "") ? startBDFPluswritefile(4): startBDFPluswritefile(idfile, 4)
     ganglion4channelsignalparam(bdfh)
-    bdfh.BDFsignals = zeros(Int32,(maxpackets,packetlen))
-    packetchannel = rawganglionboard(ip_board, ip_ours, locallogging=true)
+    bdfh.BDFsignals = zeros(Int32,(maxpackets,div(packetlen,3)))
+    packetchannel = rawganglionboard(ip_board, ip_ours, locallogging=true, maketestwave=true)
     setplustimenow(bdfh)
     pcount = 0
     packettime = 0.0
@@ -431,19 +437,17 @@ function makeganglionbdfplus(path, ip_board, ip_ours; idfile="",
         rec = makeganglionrecord(packettime, packetchannel, false, packetlen)
         pcount += 1
         packetinspector(bdfh, pcount, maxpackets)
-        bdfh.BDFsignals[pcount,:] .= rec
+        bdfh.BDFsignals[pcount,:] = rec
         packettime += packetinterval
     end
     bdfh.file_duration = Float64(maxpackets)
     bdfh.datarecords = maxpackets
+    bdfh.datarecord_duration = 1.0
+    bdfh.recordsize=3750
+    bdfh.headersize=256*6
     EDFPlus.writefile!(bdfh, path)
 end
 
 
-if PROGRAM_FILE == "OpenBCI_WiFi.jl"
-    makeganglionbdfplus("testfile.bdf", "192.168.1.25", "192.168.1.1",
-                         idfile="patientdata.json")
-end
-
-
 end # module
+
