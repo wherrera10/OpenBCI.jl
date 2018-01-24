@@ -414,7 +414,7 @@ end
 
 
 """ dummy function, will in practice do spike detection etc.  """
-nilfunc(bdfh, rec) = info("Record done: length $(length(rec))")
+nilfunc(bdfh, rec) = info("Record $pcount of $maxpacketsreceived.")
 
 
 function makeganglionbdfplus(path, ip_board, ip_ours; idfile="",
@@ -429,8 +429,8 @@ function makeganglionbdfplus(path, ip_board, ip_ours; idfile="",
     packettime = 0.0
     while pcount < maxpackets
         rec = makeganglionrecord(packettime, packetchannel, false, packetlen)
-        packetinspector(bdfh, rec)
         pcount += 1
+        packetinspector(bdfh, pcount, maxpackets)
         bdfh.BDFsignals[pcount,:] .= rec
         packettime += packetinterval
     end
