@@ -6,7 +6,7 @@
 @Purpose: EEG file OpenBCI Ganglion view data example
 =#
 
-using OpenBCI_WiFI.jl
+using OpenBCI_WiFi
 using EDFPlus
 using Plots
 pyplot()
