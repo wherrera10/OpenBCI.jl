@@ -396,9 +396,9 @@ function makeganglionrecord(rectime, packetchannel, acceldata, reclen)
         # this would be logged as a button press annotation in that record
         # We assume accelerometer data here is the standard non-time-stamped version
         if acceldata && data[33] == 0xC0 && findfirst(data[27:32]) > 0
-            xaccel += reinterpret(Int16, data[27:28])
-            yaccel += reinterpret(Int16, data[29:30])
-            zaccel += reinterpret(Int16, data[31:32])
+            xaccel += data[27] >> 8 + data[28]
+            yaccel += data[29] >> 8 + data[30]
+            zaccel += data[31] >> 8 + data[32]
             numaccelpackets += 1
         end
     end
@@ -413,7 +413,7 @@ function makeganglionrecord(rectime, packetchannel, acceldata, reclen)
     recbytes = vcat(chan1,chan2,chan3,chan4,chan5)
     rec = Array{Int32,1}(div(reclen,3))
     for i in 1:3:reclen-1
-        rec[div(i,3)+1] = Int(reinterpret(EDFPlus.Int24, recbytes[i:i+2])[1])
+        rec[div(i,3)+1] = recbytes[i] >> 16 + recbytes[i+1] >> 8 + recbytes[i+2]
     end
     rec
 end
