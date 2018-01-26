@@ -41,7 +41,7 @@ const GANGLIONPHYSICALMAXIMUM =  15686  # microvolts
 const scale_fac_accel_G_per_count = 0.032  # 0.032 G or 32 mG per accelerometer unit
 
 
-# Commands for in SDK http://docs.openbci.com/software/01-Open BCI_SDK
+# Commands for board as in SDK http://docs.openbci.com/software/01-Open BCI_SDK
 const command_stop = "s"
 const command_startText = "x"
 const command_startBinary = "b"
@@ -60,12 +60,12 @@ const command_biasFixed = "~"
 const sratecommands = Dict(25600 =>'0', 12800 =>'1', 6400 =>'2', 3200 =>'3', 1600=>'4', 800=>'5', 400=>'6', 200=>'7')
 
 
-""" Send a command to the OpenBCI harware via the WiFI http server POST /command JSON interface """
-function postwrite(server, command)
+""" Send a command to the OpenBCI hardware via the WiFI http server POST /command JSON interface """
+function postwrite(server, command, saywarn=true)
     resp = post("$server/command"; json=Dict("command"=>command))
     if statuscode(resp) == 200
         info("command was $command, response was $(readstring(resp))")
-    else
+    elseif saywarn
         warn("Got status $(statuscode(resp)), failed to get proper response from $server after command $command")
     end
 end
@@ -81,13 +81,13 @@ getregisters(server) = postwrite(server, "?")
 enablechannels(server, chan=[1,2,3,4]) = for i in chan postwrite(server, b"qwer"[i]) end
 disablechannel(server, chan) = postwrite(server,chan)
 startsquarewave(server) = postwrite(server, "[")
-stopsquarewave(server) = postwrite(server, "]")
+stopsquarewave(server) = postwrite(server, "]", false)
 startimpedancetest(server) = postwrite(server, "z")
-stopimpedancetest(server) = postwrite(server, "Z")
+stopimpedancetest(server) = postwrite(server, "Z", false)
 startaccelerometer(server) = postwrite(server, "n")
-stopaccelerometer(server) = postwrite(server, "N")
+stopaccelerometer(server) = postwrite(server, "N", false)
 startSDlogging(server) = postwrite(server, "a")         # up to 14 seconds of SD card logging
-stopSDlogging(server) = postwrite(server, "j")          # stop logging
+stopSDlogging(server) = postwrite(server, "j", false)   # stop logging
 attachshield(server) = postwrite(server, "{")
 detachshield(server) = postwrite(server, "}")
 resetshield(server) = postwrite(server,";")
@@ -99,7 +99,7 @@ Server task, run in separate task, gets stream of packets from the OpenBCI Wifi 
 and sends back to main process via a channel
 serveraddress: in form of "http://111.222.333/" (used to restert if error)
 portnum: our port number the OpenBCI Wifi will connect to
-timeout: how long to wait before we decide to redo the socket
+packetchannel: the channel over which we send data to the parent task
 """
 function asyncsocketserver(serveraddress, portnum, packetchannel)
     numberofgets = 1
@@ -316,7 +316,7 @@ end
 
 
 """ function to help set up BDF+ file header """
-function ganglion4channelsignalparam(bdfh, records, size, interval; smp_per_record=250, recordduration=1.0,
+function ganglion4channelsignalparam(bdfh, records, size, interval; smp_per_record=250,
                                      labels=["1", "2", "3", "4", "5"],
                                      transtype="active electrode", physdim="uV",
                                      prefilter="None")
@@ -410,19 +410,18 @@ function makeganglionrecord(rectime, packetchannel, acceldata, reclen)
 end
 
 
-
 """ dummy function, will in practice do spike detection etc.  """
 nilfunc(bdfh, pcount, maxpackets) = info("Record $pcount of $maxpackets received.")
 
 
 """
     makeganglionbdfplus
-Set up and ample streaming ganglion board and write a BDF+ file as output.
+Set up and sample streaming ganglion board and write a BDF+ file as output.
 Args:
 ip_board         the ip number of the WiFi shield
 ip_ours          the ip number of the machine getting the stream, generally this computer
 records          number of record to write, is same as seconds in file with defaults
-   ----- optional argmnets below -----
+   ----- optional arguments below -----
 idfile           optional JSON file for patient and machine data
 inspector        logging or detection function, called once every BDF+ record
 portnum          the port number to which the shield will stream data
@@ -433,7 +432,7 @@ locallogging     true if loglevel is to be info rather than warn
 logSD            true if should log to SD card for 14 sec
 accelannotations true if accelerometer data to be recorded
 impedancetest    true if impedance check to be done
-maketestwave     true if squareqave test signal to be generated
+maketestwave     true if squarewave test signal to be generated
 """
 function makeganglionbdfplus(path, ip_board, ip_ours, records=60; idfile="",
                              inspector=nilfunc, portnum=DEFAULT_STREAM_PORT,
@@ -463,4 +462,3 @@ end
 
 
 end # module
-
