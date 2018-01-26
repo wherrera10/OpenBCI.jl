@@ -1,7 +1,7 @@
 #=
 OpenBCI_WiFi.jl
 @Author: William Herrera
-@Version: 0.012
+@Version: 0.015
 @Copyright William Herrera, 2018
 @Created: 16 Jan 2018
 @Purpose: EEG WiFi routines using OpenBCI Arduino hardware
@@ -12,7 +12,7 @@ using Logging
 using EDFPlus
 using Requests
 using JSON
-import Requests: get, post, get_streaming
+import Requests: get, post
 
 
 """
@@ -86,18 +86,11 @@ startimpedancetest(server) = postwrite(server, "z")
 stopimpedancetest(server) = postwrite(server, "Z")
 startaccelerometer(server) = postwrite(server, "n")
 stopaccelerometer(server) = postwrite(server, "N")
-startSDlogging(server) = postwrite(server, "J")         # up to 4 hrs unless stopped!
-stopSDlogging(server) = postwrite(server, "j")          # one hour max default
+startSDlogging(server) = postwrite(server, "a")         # up to 14 seconds of SD card logging
+stopSDlogging(server) = postwrite(server, "j")          # stop logging
 attachshield(server) = postwrite(server, "{")
 detachshield(server) = postwrite(server, "}")
 resetshield(server) = postwrite(server,";")
-
-
-""" TODO: run impedence test. This is not well documented, will need to specify further later """
-function runimpedancetest(serveraddress)
-    startimpedancetest(serveraddress)
-    startimpedancetest(serveraddress)
-end
 
 
 """
@@ -108,9 +101,7 @@ serveraddress: in form of "http://111.222.333/" (used to restert if error)
 portnum: our port number the OpenBCI Wifi will connect to
 timeout: how long to wait before we decide to redo the socket
 """
-function asyncsocketserver(serveraddress, portnum, packetchannel, timeout)
-    timer = time()
-    sequentialtimeouts = 0
+function asyncsocketserver(serveraddress, portnum, packetchannel)
     numberofgets = 1
     try
         info("Entered server async code")
@@ -125,8 +116,6 @@ function asyncsocketserver(serveraddress, portnum, packetchannel, timeout)
                     if bytes[1] == 0xA0 # in sync?
                         put!(packetchannel, bytes[1:33])
                         bytes = bytes[34:end]
-                        timer = time()
-                        sequentialtimeouts = 0
                     elseif (top = findfirst(x->x==0xA0, bytes)) > 0
                         info("sync: dropping bytes above position $top")
                         bytes = bytes[top:end]
@@ -135,18 +124,11 @@ function asyncsocketserver(serveraddress, portnum, packetchannel, timeout)
                         bytes = b""
                     end
                 else
-                    if time() - timer > timeout
-                        sequentialtimeouts += 1
-                        break
-                    end
                     yield()
                     sleep(0.01)
                 end
             end
             # if we got here we may need to do a restart, but try a new get also
-            if sequentialtimeouts > 2
-                warn("connection timeout, restarting connection")
-            end
             numberofgets += 1
             info("Redoing get for binary stream, will now have done get $numberofgets times")
             get("$serveraddress/stream/start")
@@ -161,22 +143,21 @@ end
 
 """
     rawganglionboard
-Implement a raw OpenBCI WiFI shield connection.
+Set up the raw OpenBCI WiFI shield connection with the OpenBCI ganglion board.
 Args:
 ipnum            the ip number of the WiFi shield
 portnum          the port number to which the shield will stream data
-timeout          seconds for a timeout error
 fs               sampling rate, usually 250 == SAMPLERATE
 latency          latency in microseconds, time between packets, default 15 msec
 locallogging     true if loglevel is to be info rather than warn
 logSD            true if should log to SD card
 useaccelerometer true if accelerometer data to be sent
 impedancetest    true if impedance check to be done
-maketestwave     true if test signal to be gererated
+maketestwave     true if test signal to be generated
 """
-function rawganglionboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT, timeout=5,
+function rawganglionboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
                            fs=250, latency=15000, locallogging=false, logSD=false,
-                           useaccelerometer=false, impedancetest=false, maketestwave=false)
+                           useaccelerometer=true, impedancetest=false, maketestwave=false)
     if locallogging
         Logging.configure(level=INFO)
         info("--- Logging starting session ---")
@@ -184,7 +165,7 @@ function rawganglionboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT, timeou
         Logging.configure(level=WARNING)
     end
     serveraddress = "http://$ip_board"
-    resp = get("$serveraddress/board", timeout=timeout)
+    resp = get("$serveraddress/board")
     if statuscode(resp) == 200
         # expect: {"board_connected": true, "board_type": "string",
         # "gains": [ null ], "num_channels": 0}
@@ -196,9 +177,8 @@ function rawganglionboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT, timeou
     end
     # It's important to start the server process before we set up the TCP port
     # so that the board will find the socket for the connection right away.
-    packetchannel = Channel(1280)
-    @async(asyncsocketserver(serveraddress, portnum, packetchannel, timeout))
-
+    packetchannel = Channel(2400)
+    @async(asyncsocketserver(serveraddress, portnum, packetchannel))
     # Now we set up the TCP port connection from the board to our service
     jso = Dict("ip"=>ip_ours, "port"=>portnum, "output"=>"raw", "latency"=>latency)
     resp = post("$serveraddress/tcp"; json=jso)
@@ -225,22 +205,27 @@ function rawganglionboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT, timeou
         stopaccelerometer(serveraddress)
     end
     info("completed config of ganglion")
-    # if impedance test, do that for 15 seconds, store in records
-    if impedancetest
-        runimpedancetest(serveraddress)
-    end
     if maketestwave
         startsquarewave(serveraddress)
+    else
+        stopsquarewave(serveraddress)
     end
     # now do data collection as a task that will terminate only when we tell it later
     # stop via exception when the channel is closed
     info("asking for stream")
     get("$serveraddress/stream/start")
+    sleep(1)
+    if impedancetest
+        info("Impedance check will be done for one second.")
+        startimpedancetest(serveraddress)
+        sleep(1)
+        stopimpedancetest(serveraddress)
+    end
     # return the channel where the data packets will be stacked
     packetchannel
 end
 
-
+""" Create the header and file descriptions of the future BDF+ file """
 function startBDFPluswritefile(signalchannels::Int, patientID="", recording="", patientcode="",
                                gender="", birthdate="", patientname="", patient_additional="",
                                admincode="", technician="", equipment="", recording_additional="")
@@ -330,7 +315,8 @@ function setplustimenow(bdfh)
 end
 
 
-function ganglion4channelsignalparam(bdfh; smp_per_record=250,
+""" function to help set up BDF+ file header """
+function ganglion4channelsignalparam(bdfh, records, size, interval; smp_per_record=250, recordduration=1.0,
                                      labels=["1", "2", "3", "4", "5"],
                                      transtype="active electrode", physdim="uV",
                                      prefilter="None")
@@ -354,8 +340,12 @@ function ganglion4channelsignalparam(bdfh; smp_per_record=250,
         end
         push!(bdfh.signalparam, parm)
     end
+    bdfh.datarecords = records
+    bdfh.datarecord_duration = interval
+    bdfh.recordsize = size
     bdfh.annotationchannel = 5
-    bdfh
+    bdfh.file_duration = Float64(records)
+    bdfh.headersize=256*6
 end
 
 
@@ -383,10 +373,11 @@ function makeganglionrecord(rectime, packetchannel, acceldata, reclen)
     xaccel = yaccel = zaccel = numaccelpackets = 0
     for sigpos in 1:3:siglen-1
         data = take!(packetchannel)
-        chan1[sigpos:sigpos+2] = data[3:5]
-        chan2[sigpos:sigpos+2] = data[6:8]
-        chan3[sigpos:sigpos+2] = data[9:11]
-        chan4[sigpos:sigpos+2] = data[12:14]
+        # the bigendians and the littleendians at it again.
+        chan1[sigpos:sigpos+2] = reverse(data[3:5])
+        chan2[sigpos:sigpos+2] = reverse(data[6:8])
+        chan3[sigpos:sigpos+2] = reverse(data[9:11])
+        chan4[sigpos:sigpos+2] = reverse(data[12:14])
         if sigpos == 1
             timestamp = EDFPlus.trimrightzeros(string(rectime))
             chan5[1:length(timestamp)+4] = Array{UInt8,1}("+$timestamp\x14\x14\x00")
@@ -413,38 +404,60 @@ function makeganglionrecord(rectime, packetchannel, acceldata, reclen)
     recbytes = vcat(chan1,chan2,chan3,chan4,chan5)
     rec = Array{Int32,1}(div(reclen,3))
     for i in 1:3:reclen-1
-        rec[div(i,3)+1] = recbytes[i] >> 16 + recbytes[i+1] >> 8 + recbytes[i+2]
+        rec[div(i,3)+1] = Int(reinterpret(EDFPlus.Int24, recbytes[i:i+2])[1])
     end
     rec
 end
+
 
 
 """ dummy function, will in practice do spike detection etc.  """
 nilfunc(bdfh, pcount, maxpackets) = info("Record $pcount of $maxpackets received.")
 
 
-function makeganglionbdfplus(path, ip_board, ip_ours; idfile="",
-                             packetinspector=nilfunc, packetlen=3750,
-                             packetinterval=1.0, maxpackets=30)
+"""
+    makeganglionbdfplus
+Set up and ample streaming ganglion board and write a BDF+ file as output.
+Args:
+ip_board         the ip number of the WiFi shield
+ip_ours          the ip number of the machine getting the stream, generally this computer
+records          number of record to write, is same as seconds in file with defaults
+   ----- optional argmnets below -----
+idfile           optional JSON file for patient and machine data
+inspector        logging or detection function, called once every BDF+ record
+portnum          the port number to which the shield will stream data
+recordsize       size of each record to write in bytes
+fs               sampling rate, usually 250 == SAMPLERATE
+latency          latency in microseconds, time between packets, default 15 msec
+locallogging     true if loglevel is to be info rather than warn
+logSD            true if should log to SD card for 14 sec
+accelannotations true if accelerometer data to be recorded
+impedancetest    true if impedance check to be done
+maketestwave     true if squareqave test signal to be generated
+"""
+function makeganglionbdfplus(path, ip_board, ip_ours, records=60; idfile="",
+                             inspector=nilfunc, portnum=DEFAULT_STREAM_PORT,
+                             recordsize=3750, fs=SAMPLERATE, latency=15000,
+                             locallogging=true, logSD=false, accelannotations=false,
+                             impedancetest=false, maketestwave=false)
     bdfh = (idfile == "") ? startBDFPluswritefile(4): startBDFPluswritefile(idfile, 4)
-    ganglion4channelsignalparam(bdfh)
-    bdfh.BDFsignals = zeros(Int32,(maxpackets,div(packetlen,3)))
-    packetchannel = rawganglionboard(ip_board, ip_ours, locallogging=true, maketestwave=true)
+    packetinterval = recordsize / 3750.0
+    ganglion4channelsignalparam(bdfh, records, recordsize, packetinterval)
+    bdfh.BDFsignals = zeros(Int32,(records,div(recordsize,3)))
+    packetchannel = rawganglionboard(ip_board, ip_ours, portnum=portnum, fs=fs,
+                                     latency=latency, locallogging=locallogging,
+                                     logSD=logSD, useaccelerometer=accelannotations,
+                                     impedancetest=impedancetest, maketestwave=maketestwave)
     setplustimenow(bdfh)
     pcount = 0
     packettime = 0.0
-    while pcount < maxpackets
-        rec = makeganglionrecord(packettime, packetchannel, false, packetlen)
+    while pcount < records
+        rec = makeganglionrecord(packettime, packetchannel, accelannotations, recordsize)
         pcount += 1
-        packetinspector(bdfh, pcount, maxpackets)
+        inspector(bdfh, pcount, records)
         bdfh.BDFsignals[pcount,:] = rec
         packettime += packetinterval
     end
-    bdfh.file_duration = Float64(maxpackets)
-    bdfh.datarecords = maxpackets
-    bdfh.datarecord_duration = 1.0
-    bdfh.recordsize=3750
-    bdfh.headersize=256*6
     EDFPlus.writefile!(bdfh, path)
 end
 
