@@ -29,10 +29,10 @@ function plottwobipolars(bdfh, pcount, maxpackets)
         c4data = bdfh.BDFsignals[pcount-PLOTINTERVAL:pcount, 751:1000][:]
         Fp1T3 = c2data .- c1data
         Fp2T4 = c4data .- c3data
-        Fp1T3 = EDFPlus.lowpassfilter(Fp1T3, 250)
-        Fp2T4 = EDFPlus.lowpassfilter(Fp2T4, 250)
-        Fp1T3 = EDFPlus.highpassfilter(Fp1T3, 250)
-        Fp2T4 = EDFPlus.highpassfilter(Fp2T4, 250)
+        Fp1T3 = EDFPlus.lowpassfilter(Fp1T3, 250, 40.0)
+        Fp2T4 = EDFPlus.lowpassfilter(Fp2T4, 250, 40.0)
+        Fp1T3 = EDFPlus.highpassfilter(Fp1T3, 250, 0.5)
+        Fp2T4 = EDFPlus.highpassfilter(Fp2T4, 250, 0.5)
         ydata = [Fp1T3, Fp2T4]
         timepoints = linspace(0.0, PLOTINTERVAL, length(Fp1T3))
         
