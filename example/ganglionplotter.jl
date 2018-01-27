@@ -22,11 +22,13 @@ const PLOTINTERVAL = 10
 
 
 function plottwobipolars(bdfh, pcount, maxpackets)
-    if pcount >= PLOTINTERVAL && pcount % PLOTINTERVAL == 0
-        startrec = pcount - PLOTINTERVAL + 1.0
-        cdata = multichanneltimesegment(bdfh, [1,2,3,4], startrec, pcount + 0.0, true)
-        Fp1T3 = cdata[2] .- cdata[1]
-        Fp2T4 = cdata[4] .- cdata[3]
+    if pcount > PLOTINTERVAL && pcount % PLOTINTERVAL == 1
+        c1data = bdfh.BDFsignals[pcount-PLOTINTERVAL:pcount, 1:250][:]
+        c2data = bdfh.BDFsignals[pcount-PLOTINTERVAL:pcount, 251:500][:]
+        c3data = bdfh.BDFsignals[pcount-PLOTINTERVAL:pcount, 501:750][:]
+        c4data = bdfh.BDFsignals[pcount-PLOTINTERVAL:pcount, 751:1000][:]
+        Fp1T3 = c2data .- c1data
+        Fp2T4 = c4data .- c3data
         Fp1T3 = EDFPlus.lowpassfilter(Fp1T3, 250)
         Fp2T4 = EDFPlus.lowpassfilter(Fp2T4, 250)
         Fp1T3 = EDFPlus.highpassfilter(Fp1T3, 250)
@@ -38,7 +40,7 @@ function plottwobipolars(bdfh, pcount, maxpackets)
         @async(begin
         plt = Plots.plot(timepoints, ydata, layout=(2,1),
                    xticks=collect(timepoints[1]:1:timepoints[end]), 
-                   yticks=false, legend=false, title="Interval from $startrec to $pcount")
+                   yticks=false, legend=false, title="Interval from $(pcount-PLOTINTERVAL) to $pcount")
         plt[1][:xaxis][:showaxis] = false
         Plots.plot!(yaxis=true, tight_layout=true, ylabel = "Fp1-T3", subplot=1)
         Plots.plot!(yaxis=true, tight_layout=true, ylabel = "Fp2-T4", subplot=2)
