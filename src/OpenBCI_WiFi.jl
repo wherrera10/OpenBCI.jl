@@ -94,15 +94,16 @@ resetshield(server) = postwrite(server,";")
 
 
 """
-    asyncsocketserver(serveraddress, portnum, packetchannel, timeout)
+    asyncsocketserver(serveraddress, portnum, packetchannel)
 Server task, run in separate task, gets stream of packets from the OpenBCI Wifi hardware
 and sends back to main process via a channel
-serveraddress: in form of "http://111.222.333/" (used to restert if error)
+serveraddress: in form of "http://111.222.133/" (used to restart if error)
 portnum: our port number the OpenBCI Wifi will connect to
 packetchannel: the channel over which we send data to the parent task
 """
 function asyncsocketserver(serveraddress, portnum, packetchannel)
     numberofgets = 1
+    wifisocket = TCPSocket()
     try
         info("Entered server async code")
         while true
@@ -137,15 +138,18 @@ function asyncsocketserver(serveraddress, portnum, packetchannel)
         info("Caught exception $y")
         # either error or the channel to process the packets has been closed
         info("Exiting WiFi streaming task")
+        close(wifisocket)
     end
 end
 
 
 """
-    rawganglionboard
+    rawOpenBCIboard
 Set up the raw OpenBCI WiFI shield connection with the OpenBCI ganglion board.
 Args:
-ipnum            the ip number of the WiFi shield
+ip_board         the ip number of the WiFi shield
+ip_ours          the ip to get the board's stream, usually this computer
+--- optional named arguments ---
 portnum          the port number to which the shield will stream data
 fs               sampling rate, usually 250 == SAMPLERATE
 latency          latency in microseconds, time between packets, default 15 msec
@@ -153,11 +157,12 @@ locallogging     true if loglevel is to be info rather than warn
 logSD            true if should log to SD card
 useaccelerometer true if accelerometer data to be sent
 impedancetest    true if impedance check to be done
-maketestwave     true if test signal to be generated
+maketestwave     true if test square-wave signal to be generated
 """
-function rawganglionboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
-                           fs=250, latency=15000, locallogging=false, logSD=false,
-                           useaccelerometer=true, impedancetest=false, maketestwave=false)
+function rawOpenBCIboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
+                         fs=250, latency=15000, locallogging=false,
+                         logSD=false, useaccelerometer=true,
+                         impedancetest=false, maketestwave=false)
     if locallogging
         Logging.configure(level=INFO)
         info("--- Logging starting session ---")
@@ -171,8 +176,9 @@ function rawganglionboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
         # "gains": [ null ], "num_channels": 0}
         sysinfo = Requests.json(resp)
         info("board reports $sysinfo")
-        if sysinfo["num_channels"] != 4
-            warn("board reports $(sysinfo["num_channels"]) channels not 4")
+        num_signals = sysinfo["num_channels"]
+        if !(num_signals in (4, 8, 16))
+            warn("board reports $num_channels channels")
         end
     end
     # It's important to start the server process before we set up the TCP port
@@ -193,7 +199,7 @@ function rawganglionboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
     else
         warn("tcp config error status code: $(statuscode(resp))")
     end
-    if fs != 250 && fs in [1600, 800, 400 , 200]
+    if fs != 250 && fs in [1600, 800, 400, 200]
         setnonstandardfs(serveraddress, fs)
     end
     if logSD
@@ -221,8 +227,8 @@ function rawganglionboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
         sleep(1)
         stopimpedancetest(serveraddress)
     end
-    # return the channel where the data packets will be stacked
-    packetchannel
+    # return the channel where the data packets will be stacked and the number of channels
+    packetchannel, num_signals
 end
 
 """ Create the header and file descriptions of the future BDF+ file """
@@ -258,10 +264,11 @@ end
 
 
 """
-    startBDFPluswritefile(signalchannels, json_idfile)
+    startBDFPluswritefile(json_idfile, signalcount)
 json_idfile is a file containing JSON formatted patient information.
 """
 function startBDFPluswritefile(json_idfile::String, signalcount::Int=4)
+    # if the json file fails as a data source, we use anonymous defaults
     patientID=""
     recording=""
     patientcode=""
@@ -316,24 +323,29 @@ end
 
 
 """ function to help set up BDF+ file header """
-function ganglion4channelsignalparam(bdfh, records, size, interval; smp_per_record=250,
-                                     labels=["1", "2", "3", "4", "5"],
+function makechannelsignalparam(bdfh, records, size, interval, num_signals;
+                                     fs=250, labels=[string(i) for i in 1:num_signals+1],
                                      transtype="active electrode", physdim="uV",
                                      prefilter="None")
     bdfh.signalparam = Array{ChannelParam,1}()
-    for i in 1:5
+    for i in 1:num_signals+1
         parm = ChannelParam()
         parm.label = labels[i]
         parm.transducer = transtype
         parm.physdimension = physdim
-        parm.physmin = GANGLIONPHYSICALMINIMUM
-        parm.physmax = GANGLIONPHYSICALMAXIMUM
+        if num_signals < 5
+            parm.physmin = GANGLIONPHYSICALMINIMUM
+            parm.physmax = GANGLIONPHYSICALMAXIMUM
+        else
+            parm.physmin = CYTONPHYSICALMINIMUM
+            parm.physmax = CYTONPHYSICALMAXIMUM
+        end
         parm.digmin = INT24MINIMUM
         parm.digmax = INT24MAXIMUM
-        parm.smp_per_record = smp_per_record
-        parm.bufoffset = (i-1) * 3 * smp_per_record + 1
+        parm.smp_per_record = fs
+        parm.bufoffset = (i-1) * 3 * fs + 1
         parm.prefilter= prefilter
-        if i == 5
+        if i == num_signals+1
             parm.annotation = true
             parm.transducer=""
             parm.prefilter = ""
@@ -343,44 +355,50 @@ function ganglion4channelsignalparam(bdfh, records, size, interval; smp_per_reco
     bdfh.datarecords = records
     bdfh.datarecord_duration = interval
     bdfh.recordsize = size
-    bdfh.annotationchannel = 5
-    bdfh.file_duration = Float64(records)
-    bdfh.headersize=256*6
+    bdfh.annotationchannel = num_signals+1
+    bdfh.file_duration = Float64(records*interval)
+    bdfh.headersize = 256 * (num_signals+2)
 end
 
 
 """
-    makeganglionrecord
+    makeBDFplusrecord
 Make a single record from signals at time rectime after start of recording.
-Use the fifth (annotation) channel for the BDFPlus timestamp and for any accelerometer data.
-Record is of 1.0 sec, so if data rate is 250 Hz, five channels is
-3 bytes per datapoint * 250 * 5 = 3750 bytes. The wifi server, commandet driver process
-uses a separate task to fill a channel with the data in raw packet form to read here.
-We only write one averaged accelerometer reading per packet.
-Reclen must be a multiple of 15 and should be a multiple of 30 to get best results.
+Use the last (annotation) channel for the timestamp and accelerometer
+annotation data. The record size defaults to be 1 second in duration.
+So, if data rate is 250 Hz, for ganglion board's 4 data channels, five
+channels total and 3 bytes per datapoint, equals 3 * 250 * 5 = 3750 bytes,
+9 cyton channnels is 6750 bytes, and the 17 for the cyton with daisyboard
+are then 12750 bytes. The wifi server sends packet data via a driver task,
+which fills a Channel (packetchannel) with the data in raw packet form to
+read by the main thread. We write one averaged accelerometer reading per
+packet. Reclen must be a multiple of 3 * (number of signals + 1).
+Returns: one record of length reclen bytes.
+--- Arguments ---
+-rectime time in seconds since start of recording
+-packetchannel the Channel that the server task uses to send data
+-acceldata true if acceleromenter data is to be used
+-reclen record size, see above for best defaults
+-num_channels total number of channels in the record including annotation channel
 """
-function makeganglionrecord(rectime, packetchannel, acceldata, reclen)
-    if reclen % 15 != 0
-        throw("makeganglionrecord record length $reclen is not a multiple of 15")
+function makeBDFplusrecord(rectime, packetchannel, acceldata, reclen, num_channels)
+    if reclen % (3*num_channels) != 0
+        throw("makeganglionrecord record length $reclen is not a multiple of 3*num_channels")
     end
-    siglen = div(reclen, 5)
-    chan1 = zeros(UInt8, siglen)
-    chan2 = zeros(UInt8, siglen)
-    chan3 = zeros(UInt8, siglen)
-    chan4 = zeros(UInt8, siglen)
-    chan5 = zeros(UInt8, siglen)
+    siglen = div(reclen, num_channels)
+    chan = zeros(UInt8, (num_channels, siglen))
     annotpos = 1
     xaccel = yaccel = zaccel = numaccelpackets = 0
     for sigpos in 1:3:siglen-1
         data = take!(packetchannel)
-        # the bigendians and the littleendians at it again.
-        chan1[sigpos:sigpos+2] = reverse(data[3:5])
-        chan2[sigpos:sigpos+2] = reverse(data[6:8])
-        chan3[sigpos:sigpos+2] = reverse(data[9:11])
-        chan4[sigpos:sigpos+2] = reverse(data[12:14])
+        # the bigendians and the littleendians are clashing again...
+        # OpenBSD boards send bigendian, BDF and EDF files are littleendian
+        for i in 1:num_channels-1
+            chan[i, sigpos:sigpos+2] .= reverse(data[i*3:i*3+2])
+        end
         if sigpos == 1
             timestamp = EDFPlus.trimrightzeros(string(rectime))
-            chan5[1:length(timestamp)+4] = Array{UInt8,1}("+$timestamp\x14\x14\x00")
+            chan[num_channels, 1:length(timestamp)+4] = Array{UInt8,1}("+$timestamp\x14\x14\x00")
             annotpos += (length(timestamp) + 4)
         end
         # TODO: we can set the ganglion board to send button press data instead of accel data
@@ -399,9 +417,12 @@ function makeganglionrecord(rectime, packetchannel, acceldata, reclen)
         zax = round(32.0 * zaccel / numaccelpackets, 4)
         atime = EDFPlus.trimrightzeros(string(rectime + reclen/(SAMPLERATE*15* 2)))
         annot = "+" * atime * "\x14$xax $yax $zax (x,y,z) accelerometer data in 1/1000 G units\x14\x00"
-        chan5[annotpos:annotpos+length(annot)-1] .= Array{UInt8,1}(annot)
+        chan[num_channels, annotpos:annotpos+length(annot)-1] .= Array{UInt8,1}(annot)
     end
-    recbytes = vcat(chan1,chan2,chan3,chan4,chan5)
+    recbytes = b""
+    for i in 1:num_channels
+        recbytes = vcat(recbytes, chan[i,:])
+    end
     rec = Array{Int32,1}(div(reclen,3))
     for i in 1:3:reclen-1
         rec[div(i,3)+1] = Int(reinterpret(EDFPlus.Int24, recbytes[i:i+2])[1])
@@ -411,16 +432,17 @@ end
 
 
 """ dummy function, will in practice do spike detection etc.  """
-nilfunc(bdfh, pcount, maxpackets) = info("Record $pcount of $maxpackets received.")
+nilfunc(bdfh, pcount, maxrecords) = info("Record $pcount of $maxrecords received.")
 
 
 """
     makeganglionbdfplus
 Set up and sample streaming ganglion board and write a BDF+ file as output.
 Args:
+path             pathname of BDF+ file to be written at end of recording run
 ip_board         the ip number of the WiFi shield
 ip_ours          the ip number of the machine getting the stream, generally this computer
-records          number of record to write, is same as seconds in file with defaults
+records          number of records to write, is same as seconds in file with defaults
    ----- optional arguments below -----
 idfile           optional JSON file for patient and machine data
 inspector        logging or detection function, called once every BDF+ record
@@ -441,9 +463,9 @@ function makeganglionbdfplus(path, ip_board, ip_ours, records=60; idfile="",
                              impedancetest=false, maketestwave=false)
     bdfh = (idfile == "") ? startBDFPluswritefile(4): startBDFPluswritefile(idfile, 4)
     packetinterval = recordsize / 3750.0
-    ganglion4channelsignalparam(bdfh, records, recordsize, packetinterval)
+    makechannelsignalparam(bdfh, records, recordsize, packetinterval, 4)
     bdfh.BDFsignals = zeros(Int32,(records,div(recordsize,3)))
-    packetchannel = rawganglionboard(ip_board, ip_ours, portnum=portnum, fs=fs,
+    packetchannel, numsig = rawOpenBCIboard(ip_board, ip_ours, portnum=portnum, fs=fs,
                                      latency=latency, locallogging=locallogging,
                                      logSD=logSD, useaccelerometer=accelannotations,
                                      impedancetest=impedancetest, maketestwave=maketestwave)
@@ -451,7 +473,54 @@ function makeganglionbdfplus(path, ip_board, ip_ours, records=60; idfile="",
     pcount = 0
     packettime = 0.0
     while pcount < records
-        rec = makeganglionrecord(packettime, packetchannel, accelannotations, recordsize)
+        rec = makeBDFplusrecord(packettime, packetchannel, accelannotations, recordsize, 5)
+        pcount += 1
+        inspector(bdfh, pcount, records)
+        bdfh.BDFsignals[pcount,:] = rec
+        packettime += packetinterval
+    end
+    EDFPlus.writefile!(bdfh, path)
+end
+
+"""
+    makecyton8bdfplus
+Set up and sample streaming cyton 8-channel board and write a BDF+ file as output.
+Args:
+path             pathname of BDF+ file to be written at end of recording run
+ip_board         the ip number of the WiFi shield
+ip_ours          the ip number of the machine getting the stream, generally this computer
+records          number of records to write, is same as seconds in file with defaults
+   ----- optional arguments below -----
+idfile           optional JSON file for patient and machine data
+inspector        logging or detection function, called once every BDF+ record
+portnum          the port number to which the shield will stream data
+recordsize       size of each record to write in bytes
+fs               sampling rate, usually 250 == SAMPLERATE
+latency          latency in microseconds, time between packets, default 15 msec
+locallogging     true if loglevel is to be info rather than warn
+logSD            true if should log to SD card for 14 sec
+accelannotations true if accelerometer data to be recorded
+impedancetest    true if impedance check to be done
+maketestwave     true if squarewave test signal to be generated
+"""
+function makecyton8bdfplus(path, ip_board, ip_ours, records=60; idfile="",
+                             inspector=nilfunc, portnum=DEFAULT_STREAM_PORT,
+                             recordsize=6750, fs=SAMPLERATE, latency=15000,
+                             locallogging=true, logSD=false, accelannotations=false,
+                             impedancetest=false, maketestwave=false)
+    bdfh = (idfile == "") ? startBDFPluswritefile(4): startBDFPluswritefile(idfile, 4)
+    packetinterval = recordsize / 6750.0
+    makechannelsignalparam(bdfh, records, recordsize, packetinterval, 4)
+    bdfh.BDFsignals = zeros(Int32,(records,div(recordsize,3)))
+    packetchannel, numsig = rawOpenBCIboard(ip_board, ip_ours, portnum=portnum, fs=fs,
+                                     latency=latency, locallogging=locallogging,
+                                     logSD=logSD, useaccelerometer=accelannotations,
+                                     impedancetest=impedancetest, maketestwave=maketestwave)
+    setplustimenow(bdfh)
+    pcount = 0
+    packettime = 0.0
+    while pcount < records
+        rec = makeBDFplusrecord(packettime, packetchannel, accelannotations, recordsize, 9)
         pcount += 1
         inspector(bdfh, pcount, records)
         bdfh.BDFsignals[pcount,:] = rec
