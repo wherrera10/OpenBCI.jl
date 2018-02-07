@@ -392,7 +392,7 @@ function makeBDFplusrecord(rectime, packetchannel, acceldata, reclen, num_channe
     for sigpos in 1:3:siglen-1
         data = take!(packetchannel)
         if daisy # Cyton board using 16 channel daisy
-            if data[2] & 1 == 1  # even packet number, maybe 0
+            if data[2] & 1 == 0  # even packet number, maybe 0
                 data = take!(packetchannel) # get an odd numbered packet
             end
             data2 = take!(packetchannel) # second packet for daisy
