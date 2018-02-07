@@ -267,7 +267,7 @@ end
     startBDFPluswritefile(json_idfile, signalcount)
 json_idfile is a file containing JSON formatted patient information.
 """
-function startBDFPluswritefile(json_idfile::String, signalcount::Int=4)
+function startBDFPluswritefile(json_idfile::String, signalcount::Int)
     # if the json file fails as a data source, we use anonymous defaults
     patientID=""
     recording=""
@@ -381,7 +381,7 @@ Returns: one record of length reclen bytes.
 -reclen record size, see above for best defaults
 -num_channels total number of channels in the record including annotation channel
 """
-function makeBDFplusrecord(rectime, packetchannel, acceldata, reclen, num_channels)
+function makeBDFplusrecord(rectime, packetchannel, acceldata, reclen, num_channels, daisy=false)
     if reclen % (3*num_channels) != 0
         throw("makeganglionrecord record length $reclen is not a multiple of 3*num_channels")
     end
@@ -391,10 +391,21 @@ function makeBDFplusrecord(rectime, packetchannel, acceldata, reclen, num_channe
     xaccel = yaccel = zaccel = numaccelpackets = 0
     for sigpos in 1:3:siglen-1
         data = take!(packetchannel)
+        if daisy # Cyton board using 16 channel daisy
+            if data[2] & 1 == 1  # even packet number, maybe 0
+                data = take!(packetchannel) # get an odd numbered packet
+            end
+            data2 = take!(packetchannel) # second packet for daisy
+        end
         # the bigendians and the littleendians are clashing again...
         # OpenBSD boards send bigendian, BDF and EDF files are littleendian
         for i in 1:num_channels-1
-            chan[i, sigpos:sigpos+2] .= reverse(data[i*3:i*3+2])
+            if daisy && i > 8
+                j = i - 8  # daisy packet channels 9 through 16
+                chan[i, sigpos:sigpos+2] .= reverse(data2[j*3:j*3+2])
+            else # all but daisy channels
+                chan[i, sigpos:sigpos+2] .= reverse(data[i*3:i*3+2])
+            end
         end
         if sigpos == 1
             timestamp = EDFPlus.trimrightzeros(string(rectime))
@@ -508,9 +519,9 @@ function makecyton8bdfplus(path, ip_board, ip_ours, records=60; idfile="",
                              recordsize=6750, fs=SAMPLERATE, latency=15000,
                              locallogging=true, logSD=false, accelannotations=false,
                              impedancetest=false, maketestwave=false)
-    bdfh = (idfile == "") ? startBDFPluswritefile(4): startBDFPluswritefile(idfile, 4)
+    bdfh = (idfile == "") ? startBDFPluswritefile(8): startBDFPluswritefile(idfile, 8)
     packetinterval = recordsize / 6750.0
-    makechannelsignalparam(bdfh, records, recordsize, packetinterval, 4)
+    makechannelsignalparam(bdfh, records, recordsize, packetinterval, 8)
     bdfh.BDFsignals = zeros(Int32,(records,div(recordsize,3)))
     packetchannel, numsig = rawOpenBCIboard(ip_board, ip_ours, portnum=portnum, fs=fs,
                                      latency=latency, locallogging=locallogging,
@@ -521,6 +532,54 @@ function makecyton8bdfplus(path, ip_board, ip_ours, records=60; idfile="",
     packettime = 0.0
     while pcount < records
         rec = makeBDFplusrecord(packettime, packetchannel, accelannotations, recordsize, 9)
+        pcount += 1
+        inspector(bdfh, pcount, records)
+        bdfh.BDFsignals[pcount,:] = rec
+        packettime += packetinterval
+    end
+    EDFPlus.writefile!(bdfh, path)
+end
+
+
+"""
+    makecyton16bdfplus
+Set up cyton 16-channel board with daisy baord for 16 signal channels and write a BDF+ file as output.
+Args:
+path             pathname of BDF+ file to be written at end of recording run
+ip_board         the ip number of the WiFi shield
+ip_ours          the ip number of the machine getting the stream, generally this computer
+records          number of records to write, is same as seconds in file with defaults
+   ----- optional arguments below -----
+idfile           optional JSON file for patient and machine data
+inspector        logging or detection function, called once every BDF+ record
+portnum          the port number to which the shield will stream data
+recordsize       size of each record to write in bytes
+fs               sampling rate, usually 250 == SAMPLERATE
+latency          latency in microseconds, time between packets, default 15 msec
+locallogging     true if loglevel is to be info rather than warn
+logSD            true if should log to SD card for 14 sec
+accelannotations true if accelerometer data to be recorded
+impedancetest    true if impedance check to be done
+maketestwave     true if squarewave test signal to be generated
+"""
+function makecyton16bdfplus(path, ip_board, ip_ours, records=60; idfile="",
+                             inspector=nilfunc, portnum=DEFAULT_STREAM_PORT,
+                             recordsize=12750, fs=SAMPLERATE, latency=15000,
+                             locallogging=true, logSD=false, accelannotations=false,
+                             impedancetest=false, maketestwave=false)
+    bdfh = (idfile == "") ? startBDFPluswritefile(16): startBDFPluswritefile(idfile, 16)
+    packetinterval = recordsize / 12750.0
+    makechannelsignalparam(bdfh, records, recordsize, packetinterval, 16)
+    bdfh.BDFsignals = zeros(Int32,(records,div(recordsize,3)))
+    packetchannel, numsig = rawOpenBCIboard(ip_board, ip_ours, portnum=portnum, fs=fs,
+                                     latency=latency, locallogging=locallogging,
+                                     logSD=logSD, useaccelerometer=accelannotations,
+                                     impedancetest=impedancetest, maketestwave=maketestwave)
+    setplustimenow(bdfh)
+    pcount = 0
+    packettime = 0.0
+    while pcount < records
+        rec = makeBDFplusrecord(packettime, packetchannel, accelannotations, recordsize, 17)
         pcount += 1
         inspector(bdfh, pcount, records)
         bdfh.BDFsignals[pcount,:] = rec
