@@ -1,10 +1,10 @@
 #=
-OpenBCI_WiFi.jl
-@Author: William Herrera
-@Version: 0.015
-@Copyright William Herrera, 2018
-@Created: 16 Jan 2018
-@Purpose: EEG WiFi routines using OpenBCI Arduino hardware
+# OpenBCI_WiFi.jl
+## Author: William Herrera
+## Version: 0.015
+## Copyright William Herrera, 2018
+## Created: 16 Jan 2018
+## Purpose: EEG WiFi routines using OpenBCI Arduino hardware
 =#
 
 module OpenBCI_WiFi
@@ -12,11 +12,12 @@ using Logging
 using EDFPlus
 using Requests
 using JSON
+using Compat
 import Requests: get, post
 
 
 """
-See http://docs.openbci.com/Hardware/03-Cyton_Data_Format#cyton-data-format-binary-format
+See [http://docs.openbci.com/Hardware/03-Cyton_Data_Format#cyton-data-format-binary-format]
 The ganglion data is same as cyton when hooked to wifi board except that only the
 first 4 channels have data, with others specified to be 0
 """
@@ -111,13 +112,14 @@ function asyncsocketserver(serveraddress, portnum, packetchannel)
             wifisocket = accept(server)
             info("socket service connected to ganglion board")
             bytes = b""
+            top = 1
             while isopen(wifisocket)
                 bytes = vcat(bytes,read(wifisocket,33))
                 if length(bytes) >= 33
                     if bytes[1] == 0xA0 # in sync?
                         put!(packetchannel, bytes[1:33])
                         bytes = bytes[34:end]
-                    elseif (top = findfirst(x->x==0xA0, bytes)) > 0
+                    elseif coalesce((top = findfirst(x->x==0xA0, bytes)), 0) > 0
                         info("sync: dropping bytes above position $top")
                         bytes = bytes[top:end]
                     else
@@ -178,7 +180,7 @@ function rawOpenBCIboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
         info("board reports $sysinfo")
         num_signals = sysinfo["num_channels"]
         if !(num_signals in (4, 8, 16))
-            warn("board reports $num_channels channels")
+            warn("board reports $num_signals channels")
         end
     end
     # It's important to start the server process before we set up the TCP port
@@ -324,7 +326,7 @@ end
 
 """ function to help set up BDF+ file header """
 function makechannelsignalparam(bdfh, records, size, interval, num_signals;
-                                     fs=250, labels=[string(i) for i in 1:num_signals+1],
+                                     fs=250, labels=[string(locali) for locali in 1:num_signals+1],
                                      transtype="active electrode", physdim="uV",
                                      prefilter="None")
     bdfh.signalparam = Array{ChannelParam,1}()
@@ -380,6 +382,7 @@ Returns: one record of length reclen bytes.
 -acceldata true if acceleromenter data is to be used
 -reclen record size, see above for best defaults
 -num_channels total number of channels in the record including annotation channel
+-daisy true if cyton has a daisyboard (take two packets per 16 channels if true)
 """
 function makeBDFplusrecord(rectime, packetchannel, acceldata, reclen, num_channels, daisy=false)
     if reclen % (3*num_channels) != 0
@@ -415,7 +418,7 @@ function makeBDFplusrecord(rectime, packetchannel, acceldata, reclen, num_channe
         # TODO: we can set the ganglion board to send button press data instead of accel data
         # this would be logged as a button press annotation in that record
         # We assume accelerometer data here is the standard non-time-stamped version
-        if acceldata && data[33] == 0xC0 && findfirst(data[27:32]) > 0
+        if acceldata && data[33] == 0xC0 && coalesce(findfirst(data[27:32]), 0) > 0
             xaccel += data[27] >> 8 + data[28]
             yaccel += data[29] >> 8 + data[30]
             zaccel += data[31] >> 8 + data[32]
@@ -442,7 +445,7 @@ function makeBDFplusrecord(rectime, packetchannel, acceldata, reclen, num_channe
 end
 
 
-""" dummy function, will in practice do spike detection etc.  """
+""" dummy function, will in practice do fft, spike detection etc.  """
 nilfunc(bdfh, pcount, maxrecords) = info("Record $pcount of $maxrecords received.")
 
 
@@ -590,3 +593,4 @@ end
 
 
 end # module
+
