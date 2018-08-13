@@ -475,7 +475,7 @@ function makeganglionbdfplus(path, ip_board, ip_ours, records=60; idfile="",
                              recordsize=3750, fs=SAMPLERATE, latency=15000,
                              locallogging=true, logSD=false, accelannotations=false,
                              impedancetest=false, maketestwave=false)
-    bdfh = (idfile == "") ? startBDFPluswritefile(4): startBDFPluswritefile(idfile, 4)
+    bdfh = (idfile == "") ? startBDFPluswritefile(4) : startBDFPluswritefile(idfile, 4)
     packetinterval = recordsize / 3750.0
     makechannelsignalparam(bdfh, records, recordsize, packetinterval, 4)
     bdfh.BDFsignals = zeros(Int32,(records,div(recordsize,3)))
