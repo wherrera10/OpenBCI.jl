@@ -522,7 +522,7 @@ function makecyton8bdfplus(path, ip_board, ip_ours, records=60; idfile="",
                              recordsize=6750, fs=SAMPLERATE, latency=15000,
                              locallogging=true, logSD=false, accelannotations=false,
                              impedancetest=false, maketestwave=false)
-    bdfh = (idfile == "") ? startBDFPluswritefile(8): startBDFPluswritefile(idfile, 8)
+    bdfh = (idfile == "") ? startBDFPluswritefile(8) : startBDFPluswritefile(idfile, 8)
     packetinterval = recordsize / 6750.0
     makechannelsignalparam(bdfh, records, recordsize, packetinterval, 8)
     bdfh.BDFsignals = zeros(Int32,(records,div(recordsize,3)))
@@ -570,7 +570,7 @@ function makecyton16bdfplus(path, ip_board, ip_ours, records=60; idfile="",
                              recordsize=12750, fs=SAMPLERATE, latency=15000,
                              locallogging=true, logSD=false, accelannotations=false,
                              impedancetest=false, maketestwave=false)
-    bdfh = (idfile == "") ? startBDFPluswritefile(16): startBDFPluswritefile(idfile, 16)
+    bdfh = (idfile == "") ? startBDFPluswritefile(16) : startBDFPluswritefile(idfile, 16)
     packetinterval = recordsize / 12750.0
     makechannelsignalparam(bdfh, records, recordsize, packetinterval, 16)
     bdfh.BDFsignals = zeros(Int32,(records,div(recordsize,3)))
