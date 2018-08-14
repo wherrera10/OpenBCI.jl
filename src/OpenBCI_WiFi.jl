@@ -191,7 +191,7 @@ function rawOpenBCIboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
     @async(asyncsocketserver(serveraddress, portnum, packetchannel))
     # Now we set up the TCP port connection from the board to our service
     jso = Dict("ip"=>ip_ours, "port"=>portnum, "output"=>"raw", "latency"=>latency)
-    resp = post("$serveraddress/tcp", "Content-Type"=>"application/json", jso)
+    resp = post("$serveraddress/tcp", "Content-Type"=>"application/json", JSON.json(jso))
     info("sending json")
     if resp.status == 200
         tcpinfo = JSON.parse(resp.body)
