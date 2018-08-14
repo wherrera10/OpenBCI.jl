@@ -1,19 +1,19 @@
 #=
-# OpenBCI_WiFi.jl
-## Author: William Herrera
-## Version: 0.015
-## Copyright William Herrera, 2018
-## Created: 16 Jan 2018
-## Purpose: EEG WiFi routines using OpenBCI Arduino hardware
+## File = OpenBCI_WiFi.jl
+## Author = William Herrera
+## Version = 0.016
+## Copyright = Copyright William Herrera, 2018
+## Creation Date = 16 Jan 2018
+## Purpose =  EEG WiFi routines using OpenBCI Arduino hardware
 =#
 
 module OpenBCI_WiFi
 using Logging
 using EDFPlus
-using Requests
+using HTTP
 using JSON
 using Compat
-import Requests: get, post
+import HTTP: get, post
 
 
 """
@@ -63,11 +63,13 @@ const sratecommands = Dict(25600 =>'0', 12800 =>'1', 6400 =>'2', 3200 =>'3', 160
 
 """ Send a command to the OpenBCI hardware via the WiFI http server POST /command JSON interface """
 function postwrite(server, command, saywarn=true)
-    resp = post("$server/command"; json=Dict("command"=>command))
-    if statuscode(resp) == 200
-        info("command was $command, response was $(readstring(resp))")
+    resp = post("$server/command", 
+                "Content-Type"=>"application/json", 
+                JSON.json(Dict("command"=>command)))
+    if resp.status == 200
+        info("command was $command, response was $(resp.body))")
     elseif saywarn
-        warn("Got status $(statuscode(resp)), failed to get proper response from $server after command $command")
+        warn("Got status $(resp.status), failed to get proper response from $server after command $command")
     end
 end
 
@@ -173,10 +175,10 @@ function rawOpenBCIboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
     end
     serveraddress = "http://$ip_board"
     resp = get("$serveraddress/board")
-    if statuscode(resp) == 200
+    if resp.status(resp) == 200
         # expect: {"board_connected": true, "board_type": "string",
         # "gains": [ null ], "num_channels": 0}
-        sysinfo = Requests.json(resp)
+        sysinfo = JSON.parse(resp.body)
         info("board reports $sysinfo")
         num_signals = sysinfo["num_channels"]
         if !(num_signals in (4, 8, 16))
@@ -189,17 +191,17 @@ function rawOpenBCIboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
     @async(asyncsocketserver(serveraddress, portnum, packetchannel))
     # Now we set up the TCP port connection from the board to our service
     jso = Dict("ip"=>ip_ours, "port"=>portnum, "output"=>"raw", "latency"=>latency)
-    resp = post("$serveraddress/tcp"; json=jso)
+    resp = post("$serveraddress/tcp", "Content-Type"=>"application/json", jso)
     info("sending json")
-    if statuscode(resp) == 200
-        tcpinfo = Requests.json(resp)
-        if tcpinfo["connected"]
-            info("Wifi shield TCP server, command connection established, info is $(readstring(resp))")
+    if resp.status == 200
+        tcpinfo = JSON.parse(resp.body)
+        if haskey(tcpinfo, "connected") && tcpinfo["connected"]
+            info("Wifi shield TCP server, command connection established, info is $tcpinfo")
         else
             throw("TCP connection failure with $serveraddress")
         end
     else
-        warn("tcp config error status code: $(statuscode(resp))")
+        warn("tcp config error status code: $(resp.status)")
     end
     if fs != 250 && fs in [1600, 800, 400, 200]
         setnonstandardfs(serveraddress, fs)
@@ -522,7 +524,7 @@ function makecyton8bdfplus(path, ip_board, ip_ours, records=60; idfile="",
                              recordsize=6750, fs=SAMPLERATE, latency=15000,
                              locallogging=true, logSD=false, accelannotations=false,
                              impedancetest=false, maketestwave=false)
-    bdfh = (idfile == "") ? startBDFPluswritefile(8) : startBDFPluswritefile(idfile, 8)
+    bdfh = (idfile == "") ? startBDFPluswritefile(8): startBDFPluswritefile(idfile, 8)
     packetinterval = recordsize / 6750.0
     makechannelsignalparam(bdfh, records, recordsize, packetinterval, 8)
     bdfh.BDFsignals = zeros(Int32,(records,div(recordsize,3)))
@@ -570,7 +572,7 @@ function makecyton16bdfplus(path, ip_board, ip_ours, records=60; idfile="",
                              recordsize=12750, fs=SAMPLERATE, latency=15000,
                              locallogging=true, logSD=false, accelannotations=false,
                              impedancetest=false, maketestwave=false)
-    bdfh = (idfile == "") ? startBDFPluswritefile(16) : startBDFPluswritefile(idfile, 16)
+    bdfh = (idfile == "") ? startBDFPluswritefile(16): startBDFPluswritefile(idfile, 16)
     packetinterval = recordsize / 12750.0
     makechannelsignalparam(bdfh, records, recordsize, packetinterval, 16)
     bdfh.BDFsignals = zeros(Int32,(records,div(recordsize,3)))
@@ -593,4 +595,3 @@ end
 
 
 end # module
-
