@@ -175,10 +175,10 @@ function rawOpenBCIboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
     end
     serveraddress = "http://$ip_board"
     resp = get("$serveraddress/board")
-    if resp.status(resp) == 200
+    if resp.status == 200
         # expect: {"board_connected": true, "board_type": "string",
         # "gains": [ null ], "num_channels": 0}
-        sysinfo = JSON.parse(resp.body)
+        sysinfo = JSON.parse(convert(String,resp.body))
         info("board reports $sysinfo")
         num_signals = sysinfo["num_channels"]
         if !(num_signals in (4, 8, 16))
@@ -194,7 +194,7 @@ function rawOpenBCIboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
     resp = post("$serveraddress/tcp", "Content-Type"=>"application/json", JSON.json(jso))
     info("sending json")
     if resp.status == 200
-        tcpinfo = JSON.parse(resp.body)
+        tcpinfo = JSON.parse(convert(String,resp.body))
         if haskey(tcpinfo, "connected") && tcpinfo["connected"]
             info("Wifi shield TCP server, command connection established, info is $tcpinfo")
         else
