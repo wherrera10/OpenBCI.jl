@@ -1,20 +1,24 @@
 #=
-## File = OpenBCI_WiFi.jl
-## Author = William Herrera
-## Version = 0.016
-## Copyright = Copyright William Herrera, 2018
-## Creation Date = 16 Jan 2018
-## Purpose =  EEG WiFi routines using OpenBCI Arduino hardware
+Package = "OpenBCI_WiFi.jl"
+Author = "William Herrera"
+Version = v"0.016"
+Copyright = "Copyright William Herrera, 2018"
+Created = "16 Jan 2018"
+Purpose = "EEG WiFi routines using OpenBCI Arduino hardware"
 =#
 
-module OpenBCI_WiFi
-using Logging
-using EDFPlus
-using HTTP
-using JSON
-using Compat
-import HTTP: get, post
 
+module OpenBCI_WiFi
+using Dates
+using JSON
+using HTTP
+import HTTP: get, post
+using Memento
+import Memento: config
+using EDFPlus
+
+
+const logger = getlogger(current_module())
 
 """
 See [http://docs.openbci.com/Hardware/03-Cyton_Data_Format#cyton-data-format-binary-format]
@@ -63,13 +67,11 @@ const sratecommands = Dict(25600 =>'0', 12800 =>'1', 6400 =>'2', 3200 =>'3', 160
 
 """ Send a command to the OpenBCI hardware via the WiFI http server POST /command JSON interface """
 function postwrite(server, command, saywarn=true)
-    resp = post("$server/command", 
-                "Content-Type"=>"application/json", 
-                JSON.json(Dict("command"=>command)))
-    if resp.status == 200
-        info("command was $command, response was $(resp.body))")
+    resp = post("$server/command"; json=Dict("command"=>command))
+    if statuscode(resp) == 200
+        info(logger, "command was $command, response was $(readstring(resp))")
     elseif saywarn
-        warn("Got status $(resp.status), failed to get proper response from $server after command $command")
+        warn(logger, "Got status $(statuscode(resp)), failed to get proper response from $server after command $command")
     end
 end
 
@@ -95,7 +97,6 @@ attachshield(server) = postwrite(server, "{")
 detachshield(server) = postwrite(server, "}")
 resetshield(server) = postwrite(server,";")
 
-
 """
     asyncsocketserver(serveraddress, portnum, packetchannel)
 Server task, run in separate task, gets stream of packets from the OpenBCI Wifi hardware
@@ -108,11 +109,11 @@ function asyncsocketserver(serveraddress, portnum, packetchannel)
     numberofgets = 1
     wifisocket = TCPSocket()
     try
-        info("Entered server async code")
+        info(logger, "Entered server async code")
         while true
             server = listen(IPv4(0), portnum)
             wifisocket = accept(server)
-            info("socket service connected to ganglion board")
+            info(logger, "socket service connected to ganglion board")
             bytes = b""
             top = 1
             while isopen(wifisocket)
@@ -122,10 +123,10 @@ function asyncsocketserver(serveraddress, portnum, packetchannel)
                         put!(packetchannel, bytes[1:33])
                         bytes = bytes[34:end]
                     elseif coalesce((top = findfirst(x->x==0xA0, bytes)), 0) > 0
-                        info("sync: dropping bytes above position $top")
+                        info(logger, "sync: dropping bytes above position $top")
                         bytes = bytes[top:end]
                     else
-                        info("sync: dumping buffer")
+                        info(logger, "sync: dumping buffer")
                         bytes = b""
                     end
                 else
@@ -135,13 +136,13 @@ function asyncsocketserver(serveraddress, portnum, packetchannel)
             end
             # if we got here we may need to do a restart, but try a new get also
             numberofgets += 1
-            info("Redoing get for binary stream, will now have done get $numberofgets times")
+            info(logger, "Redoing get for binary stream, will now have done get $numberofgets times")
             get("$serveraddress/stream/start")
         end
     catch y
-        info("Caught exception $y")
+        info(logger, "Caught exception $y")
         # either error or the channel to process the packets has been closed
-        info("Exiting WiFi streaming task")
+        info(logger, "Exiting WiFi streaming task")
         close(wifisocket)
     end
 end
@@ -168,21 +169,21 @@ function rawOpenBCIboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
                          logSD=false, useaccelerometer=true,
                          impedancetest=false, maketestwave=false)
     if locallogging
-        Logging.configure(level=INFO)
-        info("--- Logging starting session ---")
+        setlevel!(logger, "info")
+        info(logger, "--- Logging starting session ---")
     else
-        Logging.configure(level=WARNING)
+        setlevel!(logger, "warn")
     end
     serveraddress = "http://$ip_board"
     resp = get("$serveraddress/board")
-    if resp.status == 200
+    if statuscode(resp) == 200
         # expect: {"board_connected": true, "board_type": "string",
         # "gains": [ null ], "num_channels": 0}
-        sysinfo = JSON.parse(convert(String,resp.body))
-        info("board reports $sysinfo")
+        sysinfo = Requests.json(resp)
+        info(logger, "board reports $sysinfo")
         num_signals = sysinfo["num_channels"]
         if !(num_signals in (4, 8, 16))
-            warn("board reports $num_signals channels")
+            warn(logger, "board reports $num_signals channels")
         end
     end
     # It's important to start the server process before we set up the TCP port
@@ -191,17 +192,17 @@ function rawOpenBCIboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
     @async(asyncsocketserver(serveraddress, portnum, packetchannel))
     # Now we set up the TCP port connection from the board to our service
     jso = Dict("ip"=>ip_ours, "port"=>portnum, "output"=>"raw", "latency"=>latency)
-    resp = post("$serveraddress/tcp", "Content-Type"=>"application/json", JSON.json(jso))
-    info("sending json")
-    if resp.status == 200
-        tcpinfo = JSON.parse(convert(String,resp.body))
-        if haskey(tcpinfo, "connected") && tcpinfo["connected"]
-            info("Wifi shield TCP server, command connection established, info is $tcpinfo")
+    resp = post("$serveraddress/tcp"; json=jso)
+    info(logger, "sending json")
+    if statuscode(resp) == 200
+        tcpinfo = Requests.json(resp)
+        if tcpinfo["connected"]
+            info(logger, "Wifi shield TCP server, command connection established, info is $(readstring(resp))")
         else
             throw("TCP connection failure with $serveraddress")
         end
     else
-        warn("tcp config error status code: $(resp.status)")
+        warn(logger, "tcp config error status code: $(statuscode(resp))")
     end
     if fs != 250 && fs in [1600, 800, 400, 200]
         setnonstandardfs(serveraddress, fs)
@@ -214,7 +215,7 @@ function rawOpenBCIboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
     else
         stopaccelerometer(serveraddress)
     end
-    info("completed config of ganglion")
+    info(logger, "completed config of ganglion")
     if maketestwave
         startsquarewave(serveraddress)
     else
@@ -222,11 +223,11 @@ function rawOpenBCIboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
     end
     # now do data collection as a task that will terminate only when we tell it later
     # stop via exception when the channel is closed
-    info("asking for stream")
+    info(logger, "asking for stream")
     get("$serveraddress/stream/start")
     sleep(1)
     if impedancetest
-        info("Impedance check will be done for one second.")
+        info(logger, "Impedance check will be done for one second.")
         startimpedancetest(serveraddress)
         sleep(1)
         stopimpedancetest(serveraddress)
@@ -286,9 +287,9 @@ function startBDFPluswritefile(json_idfile::String, signalcount::Int)
     recording_additional=""
     try
         jfh = open(json_idfile, "r")
-        dict = JSON.parse(readstring(jfh))
+        dict = JSON.parse(read(jfh, String))
         close(jfh)
-        info("Using patient file ID information: $dict")
+        info(logger, "Using patient file ID information: $dict")
         if haskey(dict, "patientID") patientID = dict["patientID"] end
         if haskey(dict, "recording") recording = dict["recording"] end
         if haskey(dict, "patientcode") patientcode = dict["patientcode"] end
@@ -301,7 +302,7 @@ function startBDFPluswritefile(json_idfile::String, signalcount::Int)
         if haskey(dict, "equipment") equipment = dict["equipment"] end
         if haskey(dict, "recording_additional") recording_additional = dict["recording_additional"] end
     catch y
-        warn("Error reading startBDFPluswritefile ID file $json_idfile: $y")
+        warn(logger, "Error reading startBDFPluswritefile ID file $json_idfile: $y")
     end
     startBDFPluswritefile(signalcount, patientID, recording, patientcode,
                                gender, birthdate, patientname, patient_additional,
@@ -448,7 +449,7 @@ end
 
 
 """ dummy function, will in practice do fft, spike detection etc.  """
-nilfunc(bdfh, pcount, maxrecords) = info("Record $pcount of $maxrecords received.")
+nilfunc(bdfh, pcount, maxrecords) = info(logger, "Record $pcount of $maxrecords received.")
 
 
 """
@@ -524,7 +525,7 @@ function makecyton8bdfplus(path, ip_board, ip_ours, records=60; idfile="",
                              recordsize=6750, fs=SAMPLERATE, latency=15000,
                              locallogging=true, logSD=false, accelannotations=false,
                              impedancetest=false, maketestwave=false)
-    bdfh = (idfile == "") ? startBDFPluswritefile(8): startBDFPluswritefile(idfile, 8)
+    bdfh = (idfile == "") ? startBDFPluswritefile(8) : startBDFPluswritefile(idfile, 8)
     packetinterval = recordsize / 6750.0
     makechannelsignalparam(bdfh, records, recordsize, packetinterval, 8)
     bdfh.BDFsignals = zeros(Int32,(records,div(recordsize,3)))
@@ -572,7 +573,7 @@ function makecyton16bdfplus(path, ip_board, ip_ours, records=60; idfile="",
                              recordsize=12750, fs=SAMPLERATE, latency=15000,
                              locallogging=true, logSD=false, accelannotations=false,
                              impedancetest=false, maketestwave=false)
-    bdfh = (idfile == "") ? startBDFPluswritefile(16): startBDFPluswritefile(idfile, 16)
+    bdfh = (idfile == "") ? startBDFPluswritefile(16) : startBDFPluswritefile(idfile, 16)
     packetinterval = recordsize / 12750.0
     makechannelsignalparam(bdfh, records, recordsize, packetinterval, 16)
     bdfh.BDFsignals = zeros(Int32,(records,div(recordsize,3)))
