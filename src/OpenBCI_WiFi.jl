@@ -1,7 +1,7 @@
 #=
 Package = "OpenBCI_WiFi.jl"
 Author = "William Herrera"
-Version = v"0.019"
+Version = v"0.020"
 Copyright = "Copyright William Herrera, 2018"
 Created = "16 Jan 2018"
 Purpose = "EEG WiFi routines using OpenBCI Arduino hardware"
@@ -334,7 +334,7 @@ function makechannelsignalparam(bdfh, records, size, interval, num_signals;
                                      fs=250, labels=[string(locali) for locali in 1:num_signals+1],
                                      transtype="active electrode", physdim="uV",
                                      prefilter="None")
-    bdfh.signalparam = Array{ChannelParam,1}()
+    bdfh.signalparam::Array{ChannelParam,1} = []
     for i in 1:num_signals+1
         parm = ChannelParam()
         parm.label = labels[i]
@@ -417,7 +417,7 @@ function makeBDFplusrecord(rectime, packetchannel, acceldata, reclen, num_channe
         end
         if sigpos == 1
             timestamp = EDFPlus.trimrightzeros(string(rectime))
-            chan[num_channels, 1:length(timestamp)+4] = Array{UInt8,1}("+$timestamp\x14\x14\x00")
+            chan[num_channels, 1:length(timestamp)+4] = unsafe_wrap(Array{UInt8,1}, "+$timestamp\x14\x14\x00")
             annotpos += (length(timestamp) + 4)
         end
         # TODO: we can set the ganglion board to send button press data instead of accel data
@@ -436,7 +436,7 @@ function makeBDFplusrecord(rectime, packetchannel, acceldata, reclen, num_channe
         zax = round(32.0 * zaccel / numaccelpackets, 4)
         atime = EDFPlus.trimrightzeros(string(rectime + reclen/(SAMPLERATE*15* 2)))
         annot = "+" * atime * "\x14$xax $yax $zax (x,y,z) accelerometer data in 1/1000 G units\x14\x00"
-        chan[num_channels, annotpos:annotpos+length(annot)-1] .= Array{UInt8,1}(annot)
+        chan[num_channels, annotpos:annotpos+length(annot)-1] .= unsafe_wrap(Array{UInt8,1}, annot)
     end
     recbytes = b""
     for i in 1:num_channels
@@ -598,4 +598,3 @@ end
 
 
 end # module
-
