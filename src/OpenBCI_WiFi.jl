@@ -1,7 +1,7 @@
 #=
 Package = "OpenBCI_WiFi.jl"
 Author = "William Herrera"
-Version = v"0.016"
+Version = v"0.018"
 Copyright = "Copyright William Herrera, 2018"
 Created = "16 Jan 2018"
 Purpose = "EEG WiFi routines using OpenBCI Arduino hardware"
@@ -10,6 +10,7 @@ Purpose = "EEG WiFi routines using OpenBCI Arduino hardware"
 
 module OpenBCI_WiFi
 using Dates
+using Sockets
 using JSON
 using HTTP
 import HTTP: get, post
@@ -18,7 +19,7 @@ import Memento: config
 using EDFPlus
 
 
-const logger = getlogger(current_module())
+const logger = getlogger(@__MODULE__)
 
 """
 See [http://docs.openbci.com/Hardware/03-Cyton_Data_Format#cyton-data-format-binary-format]
@@ -67,11 +68,13 @@ const sratecommands = Dict(25600 =>'0', 12800 =>'1', 6400 =>'2', 3200 =>'3', 160
 
 """ Send a command to the OpenBCI hardware via the WiFI http server POST /command JSON interface """
 function postwrite(server, command, saywarn=true)
-    resp = post("$server/command"; json=Dict("command"=>command))
-    if statuscode(resp) == 200
-        info(logger, "command was $command, response was $(readstring(resp))")
+    resp = post("$server/command", 
+                "Content-Type"=>"application/json", 
+                JSON.json(Dict("command"=>command)))
+    if resp.status == 200
+        info(logger, "command was $command, response was $(String(resp.body))")
     elseif saywarn
-        warn(logger, "Got status $(statuscode(resp)), failed to get proper response from $server after command $command")
+        warn(logger, "Got status $(resp.status), failed to get proper response from $server after command $command")
     end
 end
 
@@ -176,10 +179,10 @@ function rawOpenBCIboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
     end
     serveraddress = "http://$ip_board"
     resp = get("$serveraddress/board")
-    if statuscode(resp) == 200
+    if resp.status == 200
         # expect: {"board_connected": true, "board_type": "string",
         # "gains": [ null ], "num_channels": 0}
-        sysinfo = Requests.json(resp)
+        sysinfo = JSON.parse(String(resp.body))
         info(logger, "board reports $sysinfo")
         num_signals = sysinfo["num_channels"]
         if !(num_signals in (4, 8, 16))
@@ -192,12 +195,12 @@ function rawOpenBCIboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
     @async(asyncsocketserver(serveraddress, portnum, packetchannel))
     # Now we set up the TCP port connection from the board to our service
     jso = Dict("ip"=>ip_ours, "port"=>portnum, "output"=>"raw", "latency"=>latency)
-    resp = post("$serveraddress/tcp"; json=jso)
+    resp = post("$serveraddress/tcp", "Content-Type"=>"application/json", JSON.json(jso))
     info(logger, "sending json")
-    if statuscode(resp) == 200
-        tcpinfo = Requests.json(resp)
-        if tcpinfo["connected"]
-            info(logger, "Wifi shield TCP server, command connection established, info is $(readstring(resp))")
+    if resp.status == 200
+        tcpinfo = JSON.parse(String(resp.body))
+        if haskey(tcpinfo, "connected") && tcpinfo["connected"]
+            info(logger, "Wifi shield TCP server, command connection established, info is $tcpinfo")
         else
             throw("TCP connection failure with $serveraddress")
         end
@@ -440,7 +443,7 @@ function makeBDFplusrecord(rectime, packetchannel, acceldata, reclen, num_channe
     for i in 1:num_channels
         recbytes = vcat(recbytes, chan[i,:])
     end
-    rec = Array{Int32,1}(div(reclen,3))
+    rec = Array{Int32,1}(undef, div(reclen,3))
     for i in 1:3:reclen-1
         rec[div(i,3)+1] = Int(reinterpret(EDFPlus.Int24, recbytes[i:i+2])[1])
     end
