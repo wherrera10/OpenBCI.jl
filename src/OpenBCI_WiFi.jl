@@ -1,7 +1,7 @@
 #=
 Package = "OpenBCI_WiFi.jl"
 Author = "William Herrera"
-Version = v"0.018"
+Version = v"0.019"
 Copyright = "Copyright William Herrera, 2018"
 Created = "16 Jan 2018"
 Purpose = "EEG WiFi routines using OpenBCI Arduino hardware"
@@ -15,7 +15,6 @@ using JSON
 using HTTP
 import HTTP: get, post
 using Memento
-import Memento: config
 using EDFPlus
 
 
@@ -599,3 +598,4 @@ end
 
 
 end # module
+
