@@ -1,7 +1,8 @@
 #=
-Package = "OpenBCI_WiFi.jl"
+[OpenBCI_WiFi.jl]
+Julia = 0.7
 Author = "William Herrera"
-Version = v"0.020"
+Version = 0.022
 Copyright = "Copyright William Herrera, 2018"
 Created = "16 Jan 2018"
 Purpose = "EEG WiFi routines using OpenBCI Arduino hardware"
@@ -9,6 +10,9 @@ Purpose = "EEG WiFi routines using OpenBCI Arduino hardware"
 
 
 module OpenBCI_WiFi
+
+export makeganglionbdfplus, makecyton8bdfplus, makecyton16bdfplus
+
 using Dates
 using Sockets
 using JSON
@@ -31,7 +35,7 @@ const ENDBYTE = 0xC0             # end of 33 byte data packet
 const DEFAULT_STREAM_PORT = 5020 # streaming port, obscure zenginkyo-1 is 5020
 
 
-# So microvolts per digital unit is 15686 / 8388607 = 0.001869917138805
+# Microvolts per digital unit for Ganglion is 15686 / 8388607 = 0.001869917138805
 const INT12MINIMUM = -2048
 const INT12MAXIMUM =  2047
 const INT24MINIMUM = -8388608    # digital minimum
@@ -65,10 +69,14 @@ const command_biasFixed = "~"
 const sratecommands = Dict(25600 =>'0', 12800 =>'1', 6400 =>'2', 3200 =>'3', 1600=>'4', 800=>'5', 400=>'6', 200=>'7')
 
 
-""" Send a command to the OpenBCI hardware via the WiFI http server POST /command JSON interface """
+"""
+    postwrite(server, command, saywarn=true)
+
+Send a command to the OpenBCI hardware via the WiFI http server POST /command JSON interface
+"""
 function postwrite(server, command, saywarn=true)
-    resp = post("$server/command", 
-                "Content-Type"=>"application/json", 
+    resp = post("$server/command",
+                "Content-Type"=>"application/json",
                 JSON.json(Dict("command"=>command)))
     if resp.status == 200
         info(logger, "command was $command, response was $(String(resp.body))")
@@ -101,11 +109,13 @@ resetshield(server) = postwrite(server,";")
 
 """
     asyncsocketserver(serveraddress, portnum, packetchannel)
+
 Server task, run in separate task, gets stream of packets from the OpenBCI Wifi hardware
 and sends back to main process via a channel
-serveraddress: in form of "http://111.222.133/" (used to restart if error)
-portnum: our port number the OpenBCI Wifi will connect to
-packetchannel: the channel over which we send data to the parent task
+# Arguments
+- serveraddress: in form of "http://111.222.133/" (used to restart if error)
+- portnum: our port number the OpenBCI Wifi will connect to
+- packetchannel: the channel over which we send data to the parent task
 """
 function asyncsocketserver(serveraddress, portnum, packetchannel)
     numberofgets = 1
@@ -151,20 +161,21 @@ end
 
 
 """
-    rawOpenBCIboard
+    rawOpenBCIboard(ip_board, ip_ours; portnum,fs,latency,locallogging,logSD,useaccelerometer,impedancetest,maketestwave)
+
 Set up the raw OpenBCI WiFI shield connection with the OpenBCI ganglion board.
-Args:
-ip_board         the ip number of the WiFi shield
-ip_ours          the ip to get the board's stream, usually this computer
+# Arguments
+-ip_board         the ip number of the WiFi shield
+-ip_ours          the ip to get the board's stream, usually this computer
 --- optional named arguments ---
-portnum          the port number to which the shield will stream data
-fs               sampling rate, usually 250 == SAMPLERATE
-latency          latency in microseconds, time between packets, default 15 msec
-locallogging     true if loglevel is to be info rather than warn
-logSD            true if should log to SD card
-useaccelerometer true if accelerometer data to be sent
-impedancetest    true if impedance check to be done
-maketestwave     true if test square-wave signal to be generated
+-portnum          the port number to which the shield will stream data
+-fs               sampling rate, usually 250 == SAMPLERATE
+-latency          latency in microseconds, time between packets, default 15 msec
+-locallogging     true if loglevel is to be info rather than warn
+-logSD            true if should log to SD card
+-useaccelerometer true if accelerometer data to be sent
+-impedancetest    true if impedance check to be done
+-maketestwave     true if test square-wave signal to be generated
 """
 function rawOpenBCIboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
                          fs=250, latency=15000, locallogging=false,
@@ -238,7 +249,10 @@ function rawOpenBCIboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
     packetchannel, num_signals
 end
 
-""" Create the header and file descriptions of the future BDF+ file """
+"""
+    startBFFPluswritefile
+Create the header and file descriptions of the future BDF+ file
+"""
 function startBDFPluswritefile(signalchannels::Int, patientID="", recording="", patientcode="",
                                gender="", birthdate="", patientname="", patient_additional="",
                                admincode="", technician="", equipment="", recording_additional="")
@@ -272,6 +286,7 @@ end
 
 """
     startBDFPluswritefile(json_idfile, signalcount)
+
 json_idfile is a file containing JSON formatted patient information.
 """
 function startBDFPluswritefile(json_idfile::String, signalcount::Int)
@@ -313,7 +328,8 @@ end
 
 
 """
-    setplustimenow
+    setplustimenow(bdfh)
+
 Set time of the BDF+ file data being acquired to current time
 """
 function setplustimenow(bdfh)
@@ -369,7 +385,8 @@ end
 
 
 """
-    makeBDFplusrecord
+    makeBDFplusrecord(rectime, packetchannel, acceldata, reclen, num_channels, daisy=false)
+
 Make a single record from signals at time rectime after start of recording.
 Use the last (annotation) channel for the timestamp and accelerometer
 annotation data. The record size defaults to be 1 second in duration.
@@ -381,7 +398,7 @@ which fills a Channel (packetchannel) with the data in raw packet form to
 read by the main thread. We write one averaged accelerometer reading per
 packet. Reclen must be a multiple of 3 * (number of signals + 1).
 Returns: one record of length reclen bytes.
---- Arguments ---
+# Arguments
 -rectime time in seconds since start of recording
 -packetchannel the Channel that the server task uses to send data
 -acceldata true if acceleromenter data is to be used
@@ -450,30 +467,45 @@ function makeBDFplusrecord(rectime, packetchannel, acceldata, reclen, num_channe
 end
 
 
-""" dummy function, will in practice do fft, spike detection etc.  """
+"""
+    nilfunc(bdfh, pcount, maxrecords)
+
+# Arguments
+- bdfh handle to the EEG BDF format data file
+- pcount the record number, a counting number (1, 2, ...)
+- maxrecords the number of records planned for the file
+
+This default function simply logs the records as received.
+This function, a callback, can in practice be used to do realtime fft,
+spike detection, BCI, etc. Substitute your function taking those arguments
+for this function in order to process the EEG data in real time.
+This function is the ``inspector`` function argument in functions below.
+"""
 nilfunc(bdfh, pcount, maxrecords) = info(logger, "Record $pcount of $maxrecords received.")
 
 
 """
-    makeganglionbdfplus
+    makeganglionbdfplus(path, ip_board, ip_ours, records; idfile,inspector,portnum,recordsize,fs,latency,locallogging,logSD,accelannotations,impedancetest,maketestwave)
+
 Set up and sample streaming ganglion board and write a BDF+ file as output.
-Args:
-path             pathname of BDF+ file to be written at end of recording run
-ip_board         the ip number of the WiFi shield
-ip_ours          the ip number of the machine getting the stream, generally this computer
-records          number of records to write, is same as seconds in file with defaults
-   ----- optional arguments below -----
-idfile           optional JSON file for patient and machine data
-inspector        logging or detection function, called once every BDF+ record
-portnum          the port number to which the shield will stream data
-recordsize       size of each record to write in bytes
-fs               sampling rate, usually 250 == SAMPLERATE
-latency          latency in microseconds, time between packets, default 15 msec
-locallogging     true if loglevel is to be info rather than warn
-logSD            true if should log to SD card for 14 sec
-accelannotations true if accelerometer data to be recorded
-impedancetest    true if impedance check to be done
-maketestwave     true if squarewave test signal to be generated
+# Required arguments
+- path             pathname of BDF+ file to be written at end of recording run
+- ip_board         the ip number of the WiFi shield
+- ip_ours          the ip number of the machine getting the stream, generally this computer
+- records          number of records to write, is same as seconds in file with defaults
+
+# Optional named arguments
+- idfile           optional JSON file for patient and machine data
+- inspector        logging or detection function, called once every BDF+ record
+- portnum          the port number to which the shield will stream data
+- recordsize       size of each record to write in bytes
+- fs               sampling rate, usually 250 == SAMPLERATE
+- latency          latency in microseconds, time between packets, default 15 msec
+- locallogging     true if loglevel is to be info rather than warn
+- logSD            true if should log to SD card for 14 sec
+- accelannotations true if accelerometer data to be recorded
+- impedancetest    true if impedance check to be done
+- maketestwave     true if squarewave test signal to be generated
 """
 function makeganglionbdfplus(path, ip_board, ip_ours, records=60; idfile="",
                              inspector=nilfunc, portnum=DEFAULT_STREAM_PORT,
@@ -502,25 +534,27 @@ function makeganglionbdfplus(path, ip_board, ip_ours, records=60; idfile="",
 end
 
 """
-    makecyton8bdfplus
+    makecyton8bdfplus(path, ip_board, ip_ours, records; idfile,inspector,portnum,recordsize,fs,latency,locallogging,logSD,accelannotations,impedancetest,maketestwave)
+
 Set up and sample streaming cyton 8-channel board and write a BDF+ file as output.
-Args:
-path             pathname of BDF+ file to be written at end of recording run
-ip_board         the ip number of the WiFi shield
-ip_ours          the ip number of the machine getting the stream, generally this computer
-records          number of records to write, is same as seconds in file with defaults
-   ----- optional arguments below -----
-idfile           optional JSON file for patient and machine data
-inspector        logging or detection function, called once every BDF+ record
-portnum          the port number to which the shield will stream data
-recordsize       size of each record to write in bytes
-fs               sampling rate, usually 250 == SAMPLERATE
-latency          latency in microseconds, time between packets, default 15 msec
-locallogging     true if loglevel is to be info rather than warn
-logSD            true if should log to SD card for 14 sec
-accelannotations true if accelerometer data to be recorded
-impedancetest    true if impedance check to be done
-maketestwave     true if squarewave test signal to be generated
+# Required arguments
+- path             pathname of BDF+ file to be written at end of recording run
+- ip_board         the ip number of the WiFi shield
+- ip_ours          the ip number of the machine getting the stream, generally this computer
+- records          number of records to write, is same as seconds in file with defaults
+
+# Optional named arguments
+- idfile           optional JSON file for patient and machine data
+- inspector        logging or detection function, called once every BDF+ record
+- portnum          the port number to which the shield will stream data
+- recordsize       size of each record to write in bytes
+- fs               sampling rate, usually 250 == SAMPLERATE
+- latency          latency in microseconds, time between packets, default 15 msec
+- locallogging     true if loglevel is to be info rather than warn
+- logSD            true if should log to SD card for 14 sec
+- accelannotations true if accelerometer data to be recorded
+- impedancetest    true if impedance check to be done
+- maketestwave     true if squarewave test signal to be generated
 """
 function makecyton8bdfplus(path, ip_board, ip_ours, records=60; idfile="",
                              inspector=nilfunc, portnum=DEFAULT_STREAM_PORT,
@@ -550,25 +584,27 @@ end
 
 
 """
-    makecyton16bdfplus
+    makecyton16bdfplus(path, ip_board, ip_ours, records; idfile,inspector,portnum,recordsize,fs,latency,locallogging,logSD,accelannotations,impedancetest,maketestwave)
+
 Set up cyton 16-channel board with daisy baord for 16 signal channels and write a BDF+ file as output.
-Args:
-path             pathname of BDF+ file to be written at end of recording run
-ip_board         the ip number of the WiFi shield
-ip_ours          the ip number of the machine getting the stream, generally this computer
-records          number of records to write, is same as seconds in file with defaults
-   ----- optional arguments below -----
-idfile           optional JSON file for patient and machine data
-inspector        logging or detection function, called once every BDF+ record
-portnum          the port number to which the shield will stream data
-recordsize       size of each record to write in bytes
-fs               sampling rate, usually 250 == SAMPLERATE
-latency          latency in microseconds, time between packets, default 15 msec
-locallogging     true if loglevel is to be info rather than warn
-logSD            true if should log to SD card for 14 sec
-accelannotations true if accelerometer data to be recorded
-impedancetest    true if impedance check to be done
-maketestwave     true if squarewave test signal to be generated
+# Required arguments
+- path             pathname of BDF+ file to be written at end of recording run
+- ip_board         the ip number of the WiFi shield
+- ip_ours          the ip number of the machine getting the stream, generally this computer
+- records          number of records to write, is same as seconds in file with defaults
+
+# Optional named arguments
+- idfile           optional JSON file for patient and machine data
+- inspector        logging or detection function, called once every BDF+ record
+- portnum          the port number to which the shield will stream data
+- recordsize       size of each record to write in bytes
+- fs               sampling rate, usually 250 == SAMPLERATE
+- latency          latency in microseconds, time between packets, default 15 msec
+- locallogging     true if loglevel is to be info rather than warn
+- logSD            true if should log to SD card for 14 sec
+- accelannotations true if accelerometer data to be recorded
+- impedancetest    true if impedance check to be done
+- maketestwave     true if squarewave test signal to be generated
 """
 function makecyton16bdfplus(path, ip_board, ip_ours, records=60; idfile="",
                              inspector=nilfunc, portnum=DEFAULT_STREAM_PORT,
