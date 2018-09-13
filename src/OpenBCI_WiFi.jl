@@ -586,7 +586,7 @@ end
 """
     makecyton16bdfplus(path, ip_board, ip_ours, records; idfile,inspector,portnum,recordsize,fs,latency,locallogging,logSD,accelannotations,impedancetest,maketestwave)
 
-Set up cyton 16-channel board with daisy baord for 16 signal channels and write a BDF+ file as output.
+Set up cyton 16-channel board with daisy board for 16 signal channels and write a BDF+ file as output.
 # Required arguments
 - path             pathname of BDF+ file to be written at end of recording run
 - ip_board         the ip number of the WiFi shield
