@@ -1,9 +1,9 @@
 #=
-@Version: 0.01
-@Author: William Herrera
-@Copyright: 2018 William Herrera
-@Created: 24 Jan 2018
-@Purpose: EEG file OpenBCI Ganglion view data example
+Version = 0.01
+Author = "William Herrera"
+Copyright = "Copyright: 2018 William Herrera"
+Created = "24 Jan 2018"
+Purpose = "EEG file OpenBCI Ganglion view data example"
 =#
 
 using OpenBCI_WiFi
@@ -50,6 +50,6 @@ function plottwobipolars(bdfh, pcount, maxpackets)
 end
 
 
-OpenBCI_WiFi.makeganglionbdfplus("examplefile.bdf", boardIP, myIP, 120,
+makeganglionbdfplus("examplefile.bdf", boardIP, myIP, 120,
                              idfile=idfile, inspector=plottwobipolars)
 
