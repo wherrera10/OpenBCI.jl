@@ -250,7 +250,7 @@ function rawOpenBCIboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
 end
 
 """
-    startBFFPluswritefile
+    startBDFPluswritefile
 Create the header and file descriptions of the future BDF+ file
 """
 function startBDFPluswritefile(signalchannels::Int, patientID="", recording="", patientcode="",
