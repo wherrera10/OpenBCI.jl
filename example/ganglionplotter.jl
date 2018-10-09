@@ -1,5 +1,5 @@
 #=
-Version = 0.01
+Version = 0.02
 Author = "William Herrera"
 Copyright = "Copyright: 2018 William Herrera"
 Created = "24 Jan 2018"
@@ -10,9 +10,6 @@ using OpenBCI_WiFi
 using EDFPlus
 using Plots
 pyplot()
-using PyPlot
-# ENV["MPLBACKEND"]="qt4agg" # set backend for PyPlot as needed
-
 
 boardIP = "192.168.1.23"
 myIP = "192.168.1.1"
@@ -20,6 +17,7 @@ idfile = "../test/patientdata.json"
 
 const PLOTINTERVAL = 10
 
+linspace(start, stop, len) = LinRange{Float64}(start, stop, len)
 
 function plottwobipolars(bdfh, pcount, maxpackets)
     if pcount > PLOTINTERVAL && pcount % PLOTINTERVAL == 1
@@ -39,10 +37,9 @@ function plottwobipolars(bdfh, pcount, maxpackets)
         # detach plotting, return quickly now so as to avoid dropped packets
         @async(begin
         plt = Plots.plot(timepoints, ydata, layout=(2,1),
-                   xticks=collect(timepoints[1]:1:timepoints[end]), 
+                   xticks=collect(timepoints[1]:1:timepoints[end]),
                    yticks=false, legend=false, title="Interval from $(pcount-PLOTINTERVAL) to $pcount")
-        plt[1][:xaxis][:showaxis] = false
-        Plots.plot!(yaxis=true, tight_layout=true, ylabel = "Fp1-T3", subplot=1)
+        Plots.plot!(yaxis=true, xaxis=false, tight_layout=true, ylabel = "Fp1-T3", subplot=1)
         Plots.plot!(yaxis=true, tight_layout=true, ylabel = "Fp2-T4", subplot=2)
         PyPlot.display(plt)
         end)
