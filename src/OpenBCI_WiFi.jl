@@ -2,7 +2,7 @@
 [OpenBCI_WiFi.jl]
 Julia = 0.7
 Author = "William Herrera"
-Version = 0.022
+Version = 0.023
 Copyright = "Copyright William Herrera, 2018"
 Created = "16 Jan 2018"
 Purpose = "EEG WiFi routines using OpenBCI Arduino hardware"
@@ -118,6 +118,7 @@ and sends back to main process via a channel
 - packetchannel: the channel over which we send data to the parent task
 """
 function asyncsocketserver(serveraddress, portnum, packetchannel)
+    findA0(buf) = (pos = findfirst(x->x==0xA0, buf); return pos == nothing ? 0 : pos) 
     numberofgets = 1
     wifisocket = TCPSocket()
     try
@@ -134,7 +135,7 @@ function asyncsocketserver(serveraddress, portnum, packetchannel)
                     if bytes[1] == 0xA0 # in sync?
                         put!(packetchannel, bytes[1:33])
                         bytes = bytes[34:end]
-                    elseif coalesce((top = findfirst(x->x==0xA0, bytes)), 0) > 0
+                    elseif (top = findA0(bytes)) > 0 
                         info(logger, "sync: dropping bytes above position $top")
                         bytes = bytes[top:end]
                     else
