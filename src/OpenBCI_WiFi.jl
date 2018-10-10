@@ -134,7 +134,7 @@ function asyncsocketserver(serveraddress, portnum, packetchannel)
                     if bytes[1] == 0xA0 # in sync?
                         put!(packetchannel, bytes[1:33])
                         bytes = bytes[34:end]
-                    elseif (top = something(findfirst(x->x==0xA0, buf), 0)) > 0 
+                    elseif (top = something(findfirst(x->x==0xA0, bytes), 0)) > 0 
                         info(logger, "sync: dropping bytes above position $top")
                         bytes = bytes[top:end]
                     else
