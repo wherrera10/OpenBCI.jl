@@ -441,7 +441,7 @@ function makeBDFplusrecord(rectime, packetchannel, acceldata, reclen, num_channe
         # TODO: we can set the ganglion board to send button press data instead of accel data
         # this would be logged as a button press annotation in that record
         # We assume accelerometer data here is the standard non-time-stamped version
-        if acceldata && data[33] == 0xC0 && coalesce(findfirst(data[27:32]), 0) > 0
+        if acceldata && data[33] == 0xC0 && something(findfirst(data[27:32]), 0) > 0
             xaccel += data[27] >> 8 + data[28]
             yaccel += data[29] >> 8 + data[30]
             zaccel += data[31] >> 8 + data[32]
