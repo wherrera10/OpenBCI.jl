@@ -1,12 +1,12 @@
 #=
-Version = 0.02
+Version = 0.03
 Author = "William Herrera"
 Copyright = "Copyright: 2018 William Herrera"
 Created = "24 Jan 2018"
 Purpose = "EEG file OpenBCI Ganglion view data example"
 =#
 
-using OpenBCI_WiFi
+using OpenBCIWiFi
 using EDFPlus
 using Plots
 pyplot()
