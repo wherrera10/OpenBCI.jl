@@ -1,15 +1,15 @@
 #=
-[OpenBCI_WiFi.jl]
+[OpenBCIWiFi.jl]
 Julia = 0.7
 Author = "William Herrera"
-Version = 0.023
+Version = 0.024
 Copyright = "Copyright William Herrera, 2018"
 Created = "16 Jan 2018"
 Purpose = "EEG WiFi routines using OpenBCI Arduino hardware"
 =#
 
 
-module OpenBCI_WiFi
+module OpenBCIWiFi
 
 export makeganglionbdfplus, makecyton8bdfplus, makecyton16bdfplus
 
