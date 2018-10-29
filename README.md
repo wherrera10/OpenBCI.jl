@@ -2,7 +2,7 @@
 Julia interface to the WiFi connected OpenBCI EEG hardware.
 
 
-Neither OpenBCI_WiFI.jl nor its dependency EDFPlus.jl are currently registered packages. 
+Neither OpenBCIWiFI.jl nor its dependency EDFPlus.jl are currently registered packages. 
 
 To install from a Julia REPL command line session, type:
 
