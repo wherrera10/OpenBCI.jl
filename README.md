@@ -1,4 +1,4 @@
-# OpenBCI_WiFi.jl
+# OpenBCIWiFi.jl
 Julia interface to the WiFi connected OpenBCI EEG hardware.
 
 
@@ -8,4 +8,4 @@ To install from a Julia REPL command line session, type:
 
 using Pkg
 Pkg.add(PackageSpec(url="http://github.com/wherrera10/EDFPlus.jl"))
-Pkg.add(PackageSpec(url="http://github.com/wherrera10/OpenBCI_WiFi.jl"))
+Pkg.add(PackageSpec(url="http://github.com/wherrera10/OpenBCIWiFi.jl"))
