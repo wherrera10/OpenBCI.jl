@@ -6,7 +6,7 @@ Created = "24 Jan 2018"
 Purpose = "EEG file OpenBCI Ganglion view data example"
 =#
 
-using OpenBCIWiFi
+using OpenBCI
 using EDFPlus
 using Plots
 pyplot()
