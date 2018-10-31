@@ -1,4 +1,4 @@
-using OpenBCIWiFi
+using OpenBCI
 using Base.Test
 # Run tests
 
