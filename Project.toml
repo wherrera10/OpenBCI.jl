@@ -1,6 +1,6 @@
 authors = ["William Herrera <wherrera@alahonua.com>"]
 name = "OpenBCI"
-uuid = "582d7a84-78fd-59ab-a7bb-47fc6b175004"
+uuid = "b695a49e-8ea5-51bc-ba0a-ba14b9cd4dab"
 version = "0.1.1"
 
 [deps]
