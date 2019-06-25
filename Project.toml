@@ -1,0 +1,12 @@
+authors = ["William Herrera <wherrera@alahonua.com>"]
+name = "OpenBCI"
+uuid = "582d7a84-78fd-59ab-a7bb-47fc6b175004"
+version = "0.1.1"
+
+[deps]
+EDFPlus = "582d7a84-78fd-59ab-a7bb-47fc6b175004"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+Sockets = "6462fe0b-24de-5631-8697-dd941f90decc"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+Memento = "f28f55f0-a522-5efc-85c2-fe41dfb9b2d9"
