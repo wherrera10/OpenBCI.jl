@@ -1,7 +1,7 @@
 authors = ["William Herrera <wherrera@alahonua.com>"]
 name = "OpenBCI"
 uuid = "b695a49e-8ea5-51bc-ba0a-ba14b9cd4dab"
-version = "0.1.1"
+version = "0.1.2"
 
 [deps]
 EDFPlus = "582d7a84-78fd-59ab-a7bb-47fc6b175004"
@@ -10,3 +10,6 @@ HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 Sockets = "6462fe0b-24de-5631-8697-dd941f90decc"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 Memento = "f28f55f0-a522-5efc-85c2-fe41dfb9b2d9"
+
+[compat]
+julia = "1"
