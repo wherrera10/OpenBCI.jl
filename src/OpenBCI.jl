@@ -1,8 +1,8 @@
 #=
 [OpenBCI.jl]
-Julia = 0.7
+Julia = 0.7+
 Author = "William Herrera"
-Version = 0.024
+Module Version = 0.025
 Copyright = "Copyright William Herrera, 2018"
 Created = "16 Jan 2018"
 Purpose = "EEG WiFi routines using OpenBCI Arduino hardware"
@@ -14,12 +14,12 @@ module OpenBCI
 export makeganglionbdfplus, makecyton8bdfplus, makecyton16bdfplus
 
 using Dates
-using Sockets
-using JSON
+using EDFPlus
 using HTTP
 import HTTP: get, post
+using JSON
 using Memento
-using EDFPlus
+using Sockets
 
 
 const logger = getlogger(@__MODULE__)
@@ -81,7 +81,10 @@ function postwrite(server, command, saywarn=true)
     if resp.status == 200
         info(logger, "command was $command, response was $(String(resp.body))")
     elseif saywarn
-        warn(logger, "Got status $(resp.status), failed to get proper response from $server after command $command")
+        warn(
+            logger, "Got status $resp.status, " *
+            "failed to get proper response from $server after command $command"
+        )
     end
 end
 
@@ -134,7 +137,7 @@ function asyncsocketserver(serveraddress, portnum, packetchannel)
                     if bytes[1] == 0xA0 # in sync?
                         put!(packetchannel, bytes[1:33])
                         bytes = bytes[34:end]
-                    elseif (top = something(findfirst(x->x==0xA0, bytes), 0)) > 0 
+                    elseif (top = something(findfirst(x->x==0xA0, bytes), 0)) > 0
                         info(logger, "sync: dropping bytes above position $top")
                         bytes = bytes[top:end]
                     else
@@ -210,7 +213,10 @@ function rawOpenBCIboard(ip_board, ip_ours; portnum=DEFAULT_STREAM_PORT,
     if resp.status == 200
         tcpinfo = JSON.parse(String(resp.body))
         if haskey(tcpinfo, "connected") && tcpinfo["connected"]
-            info(logger, "Wifi shield TCP server, command connection established, info is $tcpinfo")
+            info(
+                logger,
+                "Wifi shield TCP server, command connection established, info is $tcpinfo"
+            )
         else
             throw("TCP connection failure with $serveraddress")
         end
@@ -251,11 +257,23 @@ end
 
 """
     startBDFPluswritefile
+
 Create the header and file descriptions of the future BDF+ file
 """
-function startBDFPluswritefile(signalchannels::Int, patientID="", recording="", patientcode="",
-                               gender="", birthdate="", patientname="", patient_additional="",
-                               admincode="", technician="", equipment="", recording_additional="")
+function startBDFPluswritefile(
+    signalchannels::Int,
+    patientID="",
+    recording="",
+    patientcode="",
+    gender="",
+    birthdate="",
+    patientname="",
+    patient_additional="",
+    admincode="",
+    technician="",
+    equipment="",
+    recording_additional=""
+)
     bdfh = BEDFPlus()
 
     bdfh.writemode = true
@@ -280,7 +298,7 @@ function startBDFPluswritefile(signalchannels::Int, patientID="", recording="", 
     bdfh.recording_additional = recording_additional
 
     bdfh.annotationchannel = bdfh.channelcount
-    bdfh
+    return bdfh
 end
 
 
@@ -321,9 +339,20 @@ function startBDFPluswritefile(json_idfile::String, signalcount::Int)
     catch y
         warn(logger, "Error reading startBDFPluswritefile ID file $json_idfile: $y")
     end
-    startBDFPluswritefile(signalcount, patientID, recording, patientcode,
-                               gender, birthdate, patientname, patient_additional,
-                               admincode, technician, equipment, recording_additional)
+    return startBDFPluswritefile(
+        signalcount,
+        patientID,
+        recording,
+        patientcode,
+        gender,
+        birthdate,
+        patientname,
+        patient_additional,
+        admincode,
+        technician,
+        equipment,
+        recording_additional
+    )
 end
 
 
@@ -346,10 +375,14 @@ end
 
 
 """ function to help set up BDF+ file header """
-function makechannelsignalparam(bdfh, records, size, interval, num_signals;
-                                     fs=250, labels=[string(locali) for locali in 1:num_signals+1],
-                                     transtype="active electrode", physdim="uV",
-                                     prefilter="None")
+function makechannelsignalparam(
+    bdfh, records, size, interval, num_signals;
+    fs=250,
+    labels=[string(locali) for locali in 1:num_signals+1],
+    transtype="active electrode",
+    physdim="uV",
+    prefilter="None"
+)
     bdfh.signalparam::Array{ChannelParam,1} = []
     for i in 1:num_signals+1
         parm = ChannelParam()
@@ -381,6 +414,7 @@ function makechannelsignalparam(bdfh, records, size, interval, num_signals;
     bdfh.annotationchannel = num_signals+1
     bdfh.file_duration = Float64(records*interval)
     bdfh.headersize = 256 * (num_signals+2)
+    return bdfh
 end
 
 
@@ -406,7 +440,9 @@ Returns: one record of length reclen bytes.
 -num_channels total number of channels in the record including annotation channel
 -daisy true if cyton has a daisyboard (take two packets per 16 channels if true)
 """
-function makeBDFplusrecord(rectime, packetchannel, acceldata, reclen, num_channels, daisy=false)
+function makeBDFplusrecord(
+    rectime, packetchannel, acceldata, reclen, num_channels, daisy=false
+)
     if reclen % (3*num_channels) != 0
         throw("makeganglionrecord record length $reclen is not a multiple of 3*num_channels")
     end
@@ -434,7 +470,8 @@ function makeBDFplusrecord(rectime, packetchannel, acceldata, reclen, num_channe
         end
         if sigpos == 1
             timestamp = EDFPlus.trimrightzeros(string(rectime))
-            chan[num_channels, 1:length(timestamp)+4] = unsafe_wrap(Array{UInt8,1}, "+$timestamp\x14\x14\x00")
+            chan[num_channels, 1:length(timestamp)+4] =
+                unsafe_wrap(Array{UInt8,1}, "+$timestamp\x14\x14\x00")
             annotpos += (length(timestamp) + 4)
         end
         # TODO: we can set the ganglion board to send button press data instead of accel data
@@ -463,7 +500,7 @@ function makeBDFplusrecord(rectime, packetchannel, acceldata, reclen, num_channe
     for i in 1:3:reclen-1
         rec[div(i,3)+1] = Int(reinterpret(EDFPlus.Int24, recbytes[i:i+2])[1])
     end
-    rec
+    return rec
 end
 
 
@@ -507,19 +544,36 @@ Set up and sample streaming ganglion board and write a BDF+ file as output.
 - impedancetest    true if impedance check to be done
 - maketestwave     true if squarewave test signal to be generated
 """
-function makeganglionbdfplus(path, ip_board, ip_ours, records=60; idfile="",
-                             inspector=nilfunc, portnum=DEFAULT_STREAM_PORT,
-                             recordsize=3750, fs=SAMPLERATE, latency=15000,
-                             locallogging=true, logSD=false, accelannotations=false,
-                             impedancetest=false, maketestwave=false)
+function makeganglionbdfplus(
+    path, ip_board, ip_ours, records=60;
+    idfile="",
+    inspector=nilfunc,
+    portnum=DEFAULT_STREAM_PORT,
+    recordsize=3750,
+    fs=SAMPLERATE,
+    latency=15000,
+    locallogging=true,
+    logSD=false,
+    accelannotations=false,
+    impedancetest=false,
+    maketestwave=false
+)
     bdfh = (idfile == "") ? startBDFPluswritefile(4) : startBDFPluswritefile(idfile, 4)
     packetinterval = recordsize / 3750.0
     makechannelsignalparam(bdfh, records, recordsize, packetinterval, 4)
     bdfh.BDFsignals = zeros(Int32,(records,div(recordsize,3)))
-    packetchannel, numsig = rawOpenBCIboard(ip_board, ip_ours, portnum=portnum, fs=fs,
-                                     latency=latency, locallogging=locallogging,
-                                     logSD=logSD, useaccelerometer=accelannotations,
-                                     impedancetest=impedancetest, maketestwave=maketestwave)
+    packetchannel, numsig = rawOpenBCIboard(
+        ip_board,
+        ip_ours,
+        portnum=portnum,
+        fs=fs,
+        latency=latency,
+        locallogging=locallogging,
+        logSD=logSD,
+        useaccelerometer=accelannotations,
+        impedancetest=impedancetest,
+        maketestwave=maketestwave
+    )
     setplustimenow(bdfh)
     pcount = 0
     packettime = 0.0
@@ -556,19 +610,36 @@ Set up and sample streaming cyton 8-channel board and write a BDF+ file as outpu
 - impedancetest    true if impedance check to be done
 - maketestwave     true if squarewave test signal to be generated
 """
-function makecyton8bdfplus(path, ip_board, ip_ours, records=60; idfile="",
-                             inspector=nilfunc, portnum=DEFAULT_STREAM_PORT,
-                             recordsize=6750, fs=SAMPLERATE, latency=15000,
-                             locallogging=true, logSD=false, accelannotations=false,
-                             impedancetest=false, maketestwave=false)
+function makecyton8bdfplus(
+    path, ip_board, ip_ours, records=60;
+    idfile="",
+    inspector=nilfunc,
+    portnum=DEFAULT_STREAM_PORT,
+    recordsize=6750,
+    fs=SAMPLERATE,
+    latency=15000,
+    locallogging=true,
+    logSD=false,
+    accelannotations=false,
+    impedancetest=false,
+    maketestwave=false
+)
     bdfh = (idfile == "") ? startBDFPluswritefile(8) : startBDFPluswritefile(idfile, 8)
     packetinterval = recordsize / 6750.0
     makechannelsignalparam(bdfh, records, recordsize, packetinterval, 8)
     bdfh.BDFsignals = zeros(Int32,(records,div(recordsize,3)))
-    packetchannel, numsig = rawOpenBCIboard(ip_board, ip_ours, portnum=portnum, fs=fs,
-                                     latency=latency, locallogging=locallogging,
-                                     logSD=logSD, useaccelerometer=accelannotations,
-                                     impedancetest=impedancetest, maketestwave=maketestwave)
+    packetchannel, numsig = rawOpenBCIboard(
+        ip_board,
+        ip_ours,
+        portnum=portnum,
+        fs=fs,
+        latency=latency,
+        locallogging=locallogging,
+        logSD=logSD,
+        useaccelerometer=accelannotations,
+        impedancetest=impedancetest,
+        maketestwave=maketestwave
+    )
     setplustimenow(bdfh)
     pcount = 0
     packettime = 0.0
@@ -606,19 +677,36 @@ Set up cyton 16-channel board with daisy board for 16 signal channels and write 
 - impedancetest    true if impedance check to be done
 - maketestwave     true if squarewave test signal to be generated
 """
-function makecyton16bdfplus(path, ip_board, ip_ours, records=60; idfile="",
-                             inspector=nilfunc, portnum=DEFAULT_STREAM_PORT,
-                             recordsize=12750, fs=SAMPLERATE, latency=15000,
-                             locallogging=true, logSD=false, accelannotations=false,
-                             impedancetest=false, maketestwave=false)
+function makecyton16bdfplus(
+    path, ip_board, ip_ours, records=60;
+    idfile="",
+    inspector=nilfunc,
+    portnum=DEFAULT_STREAM_PORT,
+    recordsize=12750,
+    fs=SAMPLERATE,
+    latency=15000,
+    locallogging=true,
+    logSD=false,
+    accelannotations=false,
+    impedancetest=false,
+    maketestwave=false
+)
     bdfh = (idfile == "") ? startBDFPluswritefile(16) : startBDFPluswritefile(idfile, 16)
     packetinterval = recordsize / 12750.0
     makechannelsignalparam(bdfh, records, recordsize, packetinterval, 16)
     bdfh.BDFsignals = zeros(Int32,(records,div(recordsize,3)))
-    packetchannel, numsig = rawOpenBCIboard(ip_board, ip_ours, portnum=portnum, fs=fs,
-                                     latency=latency, locallogging=locallogging,
-                                     logSD=logSD, useaccelerometer=accelannotations,
-                                     impedancetest=impedancetest, maketestwave=maketestwave)
+    packetchannel, numsig = rawOpenBCIboard(
+        ip_board,
+        ip_ours,
+        portnum=portnum,
+        fs=fs,
+        latency=latency,
+        locallogging=locallogging,
+        logSD=logSD,
+        useaccelerometer=accelannotations,
+        impedancetest=impedancetest,
+        maketestwave=maketestwave
+    )
     setplustimenow(bdfh)
     pcount = 0
     packettime = 0.0
