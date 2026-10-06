@@ -9,8 +9,8 @@ To actually use the OpenBCI board in this testing, set the OPENBCI_RUN_HARDWARE_
 environment variable to "true" add the variables OPENBCI_BOARD_IP = "the ip" and 
 OPENBCI_BOARD_PORT = "the port" so the board is reachable at the configured IP addresses.
 """
-using Test
-using OpenBCI, Dates, Logging
+
+using Test, OpenBCI, Dates, Logging
 
 # This may be a CI run, so try to silence warnings about no hardware connected
 global_logger(ConsoleLogger(stderr, Logging.Error))
