@@ -5,32 +5,26 @@ export makeganglionbdfplus, makecyton8bdfplus, makecyton16bdfplus
 
 using HTTP
 import HTTP: get, post
-using Dates, EDFPlus, JSON, Memento, Sockets
+using Dates, Logging, Sockets, EDFPlus, JSON
 
-const logger = getlogger(@__MODULE__)
-
-"""
-See [http://docs.openbci.com/Hardware/03-Cyton_Data_Format#cyton-data-format-binary-format]
-The ganglion data is same as cyton when hooked to wifi board except that only the
-first 4 channels have data, with others specified to be 0
-"""
+# See [http://docs.openbci.com/Hardware/03-Cyton_Data_Format#cyton-data-format-binary-format]
+# The ganglion data is same as cyton when hooked to wifi board except that only the
+# first 4 channels have data, with others specified to be 0
 const SAMPLE_RATE = 250.0        # Hz, the default fs for ganglion
 const PACKET_SIZE = 33           # total bytes per OpenBCI binary data packet
 const START_BYTE = 0xA0          # start of 33 byte data packet
 const END_BYTE = 0xC0            # end of 33 byte data packet
 const DEFAULT_STREAM_PORT = 5020 # streaming port, obscure zenginkyo-1 is 5020
 
-# per board-type parameters: number of signal channels, number of record
+# Per board-type parameters: number of signal channels, number of record
 # channels (signal channels plus the annotation channel), and the default
 # record size in bytes (3 bytes/sample * fs * recordchannels)
 const GANGLION_NUM_SIGNALS = 4
 const GANGLION_RECORD_CHANNELS = 5
 const GANGLION_RECORDSIZE = 3750
-
 const CYTON8_NUM_SIGNALS = 8
 const CYTON8_RECORD_CHANNELS = 9
 const CYTON8_RECORD_SIZE = 6750
-
 const CYTON16_NUM_SIGNALS = 16
 const CYTON16_RECORD_CHANNELS = 17
 const CYTON16_RECORD_SIZE = 12750
@@ -45,7 +39,7 @@ const CYTON_PHYSICAL_MAXIMUM = 187500
 const GANGLION_PHYSICAL_MINIMUM = -15686 # microvolts
 const GANGLION_PHYSICAL_MAXIMUM = 15686  # microvolts
 
-# accelerometer conversion factor
+# Accelerometer conversion factor
 const scale_fac_accel_G_per_count = 0.032 # 0.032 G or 32 mG per accelerometer unit
 
 # Commands for board as in SDK http://docs.openbci.com/software/01-Open BCI_SDK
@@ -114,7 +108,7 @@ const sratecommands = Dict(
 """
     loggedrequest(requestfn, url, args...; kwargs...)
 
-Perform an HTTP request via `requestfn` (e.g. `get` or `post`), logging and
+    Perform an HTTP request via \`requestfn\` (e.g. \`get\` or \`post\`), logging and
 rethrowing any network-level exception so callers see the original failure
 with added context instead of an unexplained crash deep inside HTTP.jl.
 """
@@ -122,7 +116,7 @@ function loggedrequest(requestfn, url, args...; kwargs...)
     try
         return requestfn(url, args...; kwargs...)
     catch e
-        warn(logger, "HTTP request to $url failed: $e")
+        @warn "HTTP request to $url failed: $e"
         rethrow(e)
     end
 end
@@ -130,7 +124,7 @@ end
 """
     postwrite(server, command, saywarn=true)
 
-Send a command to the OpenBCI hardware via the WiFI http server POST /command JSON interface
+    Send a command to the OpenBCI hardware via the WiFI http server POST /command JSON interface
 """
 function postwrite(server, command, saywarn = true)
     resp = loggedrequest(
@@ -140,17 +134,16 @@ function postwrite(server, command, saywarn = true)
         JSON.json(Dict("command" => command)),
     )
     if resp.status == 200
-        info(logger, "command was $command, response was $(String(resp.body))")
+        @info "command was $command, response was $(String(resp.body))"
     elseif saywarn
-        warn(
-            logger,
-            "Got status $(resp.status), " *
-                "failed to get proper response from $server after command $command",
-        )
+        @warn "Got status $(resp.status), " *
+            "failed to get proper response from $server after command $command"
     end
 end
 
-""" The functions below all are specific calls to the postwrite function above """
+"""
+    The functions below all are specific calls to the postwrite function above
+"""
 stop(server) = postwrite(server, command_stop) # stop streaming "s"
 softreset(server) = postwrite(server, "v")     # reset peripherals only
 start(server) = postwrite(
@@ -160,8 +153,10 @@ start(server) = postwrite(
 getfs(server) = postwrite(server, "~~") # reply is sample rate
 setnonstandardfs(server, srate = 200) = postwrite(server, sratecommands[srate])
 getregisters(server) = postwrite(server, "?")
-enablechannels(server, chan = [1, 2, 3, 4]) = for i in chan
-    postwrite(server, command_activate_channel[i])
+function enablechannels(server, chan = [1, 2, 3, 4])
+    for i in chan
+        postwrite(server, command_activate_channel[i])
+    end
 end
 disablechannel(server, chan) = postwrite(server, chan)
 startsquarewave(server) = postwrite(server, "[")
@@ -181,6 +176,7 @@ resetshield(server) = postwrite(server, ";")
 
 Server task, run in separate task, gets stream of packets from the OpenBCI Wifi hardware
 and sends back to main process via a channel
+
 # Arguments
 - serveraddress: in form of "http://111.222.133/" (used to restart if error)
 - portnum: our port number the OpenBCI Wifi will connect to
@@ -191,10 +187,10 @@ function asyncsocketserver(serveraddress, portnum, packetchannel)
     wifisocket = TCPSocket()
     server = listen(IPv4(0), portnum)
     try
-        info(logger, "Entered server async code")
+        @info "Entered server async code"
         while true
             wifisocket = accept(server)
-            info(logger, "socket service connected to ganglion board")
+            @info "socket service connected to ganglion board"
             bytes = Vector{UInt8}()
             top = 1
             while isopen(wifisocket)
@@ -204,25 +200,23 @@ function asyncsocketserver(serveraddress, portnum, packetchannel)
                     put!(packetchannel, bytes[1:PACKET_SIZE])
                     bytes = bytes[PACKET_SIZE + 1:end]
                 elseif (top = something(findfirst(x -> x == START_BYTE, bytes), 0)) > 0
-                    info(logger, "sync: dropping bytes above position $top")
+                    @info "sync: dropping bytes above position $top"
                     bytes = bytes[top:end]
                 else
-                    info(logger, "sync: dumping buffer")
+                    @info "sync: dumping buffer"
                     empty!(bytes)
                 end
             end
             # if we got here we may need to do a restart, but try a new get also
             numberofgets += 1
-            info(
-                logger,
-                "Redoing get for binary stream, will now have done get $numberofgets times",
-            )
+            @info "Redoing get for binary stream, will now have done get " *
+                "$numberofgets times"
             loggedrequest(get, "$serveraddress/stream/start")
         end
     catch y
-        info(logger, "Caught exception $y")
+        @info "Caught exception $y"
         # either error or the channel to process the packets has been closed
-        info(logger, "Exiting WiFi streaming task")
+        @info "Exiting WiFi streaming task"
     finally
         close(wifisocket)
         close(server)
@@ -230,9 +224,11 @@ function asyncsocketserver(serveraddress, portnum, packetchannel)
 end
 
 """
-    rawOpenBCIboard(ip_board, ip_ours; portnum,fs,latency,locallogging,logSD,useaccelerometer,impedancetest,maketestwave)
+    rawOpenBCIboard(ip_board, ip_ours; portnum, fs, latency, locallogging,
+        logSD, useaccelerometer, impedancetest, maketestwave)
 
 Set up the raw OpenBCI WiFI shield connection with the OpenBCI ganglion board.
+
 # Arguments
 -ip_board         the ip number of the WiFi shield
 -ip_ours          the ip to get the board's stream, usually this computer
@@ -258,86 +254,86 @@ function rawOpenBCIboard(
     impedancetest = false,
     maketestwave = false,
 )
-    if locallogging
-        setlevel!(logger, "info")
-        info(logger, "--- Logging starting session ---")
-    else
-        setlevel!(logger, "warn")
-    end
-    serveraddress = "http://$ip_board"
-    resp = loggedrequest(get, "$serveraddress/board")
-    if resp.status == 200
-        # expect: {"board_connected": true, "board_type": "string",
-        # "gains": [ null ], "num_channels": 0}
-        sysinfo = JSON.parse(String(resp.body))
-        info(logger, "board reports $sysinfo")
-        num_signals = sysinfo["num_channels"]
-        if !(num_signals in (4, 8, 16))
-            warn(logger, "board reports $num_signals channels")
-        end
-    else
-        warn(
-            logger,
-            "board status request failed with status $(resp.status); unable to determine channel count",
-        )
-        num_signals = 0
-    end
-    # It's important to start the server process before we set up the TCP port
-    # so that the board will find the socket for the connection right away.
-    packetchannel = Channel(2400)
-    @async(asyncsocketserver(serveraddress, portnum, packetchannel))
-    # Now we set up the TCP port connection from the board to our service
-    jso = Dict("ip" => ip_ours, "port" => portnum, "output" => "raw", "latency" => latency)
-    resp = loggedrequest(
-        post,
-        "$serveraddress/tcp",
-        "Content-Type" => "application/json",
-        JSON.json(jso),
-    )
-    info(logger, "sending json")
-    if resp.status == 200
-        tcpinfo = JSON.parse(String(resp.body))
-        if haskey(tcpinfo, "connected") && tcpinfo["connected"]
-            info(
-                logger,
-                "Wifi shield TCP server, command connection established, info is $tcpinfo",
-            )
+    return Logging.with_logger(Logging.ConsoleLogger(
+        stderr,
+        locallogging ? Logging.Info : Logging.Warn,
+    )) do
+        serveraddress = "http://$ip_board"
+        resp = loggedrequest(get, "$serveraddress/board")
+        if resp.status == 200
+            # expect: {"board_connected": true, "board_type": "string",
+            # "gains": [ null ], "num_channels": 0}
+            sysinfo = JSON.parse(String(resp.body))
+            @info "board reports $sysinfo"
+            num_signals = sysinfo["num_channels"]
+            if !(num_signals in (4, 8, 16))
+                @warn "board reports $num_signals channels"
+            end
         else
-            error("TCP connection failure with $serveraddress")
+            @warn "board status request failed with status $(resp.status); " *
+                "unable to determine channel count"
+            num_signals = 0
         end
-    else
-        warn(logger, "tcp config error status code: $(resp.status)")
-    end
-    if fs != 250 && fs in [1600, 800, 400, 200]
-        setnonstandardfs(serveraddress, fs)
-    end
-    if logSD
-        startSDlogging(serveraddress)
-    end
-    if useaccelerometer
-        startaccelerometer(serveraddress)
-    else
-        stopaccelerometer(serveraddress)
-    end
-    info(logger, "completed config of ganglion")
-    if maketestwave
-        startsquarewave(serveraddress)
-    else
-        stopsquarewave(serveraddress)
-    end
-    # now do data collection as a task that will terminate only when we tell it later
-    # stop via exception when the channel is closed
-    info(logger, "asking for stream")
-    loggedrequest(get, "$serveraddress/stream/start")
-    sleep(1)
-    if impedancetest
-        info(logger, "Impedance check will be done for one second.")
-        startimpedancetest(serveraddress)
+        # It's important to start the server process before we set up the TCP port
+        # so that the board will find the socket for the connection right away.
+        packetchannel = Channel(2400)
+        @async(asyncsocketserver(serveraddress, portnum, packetchannel))
+        # Now we set up the TCP port connection from the board to our service
+        jso = Dict(
+            "ip" => ip_ours,
+            "port" => portnum,
+            "output" => "raw",
+            "latency" => latency,
+        )
+        resp = loggedrequest(
+            post,
+            "$serveraddress/tcp",
+            "Content-Type" => "application/json",
+            JSON.json(jso),
+        )
+        @info "sending json"
+        if resp.status == 200
+            tcpinfo = JSON.parse(String(resp.body))
+            if haskey(tcpinfo, "connected") && tcpinfo["connected"]
+                @info "Wifi shield TCP server, command connection established, " *
+                    "info is $tcpinfo"
+            else
+                error("TCP connection failure with $serveraddress")
+            end
+        else
+            @warn "tcp config error status code: $(resp.status)"
+        end
+        if fs != 250 && fs in [1600, 800, 400, 200]
+            setnonstandardfs(serveraddress, fs)
+        end
+        if logSD
+            startSDlogging(serveraddress)
+        end
+        if useaccelerometer
+            startaccelerometer(serveraddress)
+        else
+            stopaccelerometer(serveraddress)
+        end
+        @info "completed config of ganglion"
+        if maketestwave
+            startsquarewave(serveraddress)
+        else
+            stopsquarewave(serveraddress)
+        end
+        # now do data collection as a task that will terminate only when we tell it later
+        # stop via exception when the channel is closed
+        @info "asking for stream"
+        loggedrequest(get, "$serveraddress/stream/start")
         sleep(1)
-        stopimpedancetest(serveraddress)
+        if impedancetest
+            @info "Impedance check will be done for one second."
+            startimpedancetest(serveraddress)
+            sleep(1)
+            stopimpedancetest(serveraddress)
+        end
+        # return the channel where the data packets will be stacked and the number of channels
+        packetchannel, num_signals
     end
-    # return the channel where the data packets will be stacked and the number of channels
-    packetchannel, num_signals
 end
 
 """
@@ -360,7 +356,6 @@ function startBDFPluswritefile(
     recording_additional = "",
 )
     bdfh = BEDFPlus()
-
     bdfh.writemode = true
     bdfh.version = "$(EDFPlus.version())"
     bdfh.edf = false
@@ -381,7 +376,6 @@ function startBDFPluswritefile(
     bdfh.technician = technician
     bdfh.equipment = equipment
     bdfh.recording_additional = recording_additional
-
     bdfh.annotationchannel = bdfh.channelcount
     return bdfh
 end
@@ -408,7 +402,7 @@ function startBDFPluswritefile(json_idfile::String, signalcount::Int)
         jfh = open(json_idfile, "r")
         dict = JSON.parse(read(jfh, String))
         close(jfh)
-        info(logger, "Using patient file ID information: $dict")
+        @info "Using patient file ID information: $dict"
         if haskey(dict, "patientID")
             patientID = dict["patientID"]
         end
@@ -443,7 +437,7 @@ function startBDFPluswritefile(json_idfile::String, signalcount::Int)
             recording_additional = dict["recording_additional"]
         end
     catch y
-        warn(logger, "Error reading startBDFPluswritefile ID file $json_idfile: $y")
+        @warn "Error reading startBDFPluswritefile ID file $json_idfile: $y"
     end
     return startBDFPluswritefile(
         signalcount,
@@ -486,19 +480,19 @@ function makechannelsignalparam(
     interval,
     num_signals;
     fs = 250,
-    labels = [string(locali) for locali in 1:num_signals + 1],
+    labels = [string(locali) for locali in 1:(num_signals + 1)],
     transtype = "active electrode",
     physdim = "uV",
     prefilter = "None",
 )
-    bdfh.signalparam::Array{ChannelParam, 1} = []
-    for i in 1:num_signals + 1
+    bdfh.signalparam = ChannelParam[]
+    for i in 1:(num_signals + 1)
         parm = ChannelParam()
         parm.label = labels[i]
         parm.transducer = transtype
         parm.physdimension = physdim
         if num_signals < 5
-            parm.physmin = GANGLION_PHYSICALMINIMUM
+            parm.physmin = GANGLION_PHYSICAL_MINIMUM
             parm.physmax = GANGLION_PHYSICAL_MAXIMUM
         else
             parm.physmin = CYTON_PHYSICAL_MINIMUM
@@ -541,7 +535,9 @@ are then 12750 bytes. The wifi server sends packet data via a driver task,
 which fills a Channel (packetchannel) with the data in raw packet form to
 read by the main thread. We write one averaged accelerometer reading per
 packet. Reclen must be a multiple of 3 * (number of signals + 1).
+
 Returns: one record of length reclen bytes.
+
 # Arguments
 -rectime time in seconds since start of recording
 -packetchannel the Channel that the server task uses to send data
@@ -559,15 +555,13 @@ function makeBDFplusrecord(
     daisy = false,
 )
     if reclen % (3 * num_channels) != 0
-        error(
-            "makeganglionrecord record length $reclen is not a multiple of 3*num_channels",
-        )
+        error("Record length $reclen is not a multiple of 3*num_channels")
     end
     siglen = div(reclen, num_channels)
     chan = zeros(UInt8, (num_channels, siglen))
     annotpos = 1
     xaccel = yaccel = zaccel = numaccelpackets = 0
-    for sigpos in 1:3:siglen - 1
+    for sigpos in 1:3:(siglen - 1)
         data = take!(packetchannel)
         if daisy
             # Cyton board using 16 channel daisy
@@ -579,7 +573,7 @@ function makeBDFplusrecord(
         end
         # the bigendians and the littleendians are clashing again...
         # OpenBSD boards send bigendian, BDF and EDF files are littleendian
-        for i in 1:num_channels - 1
+        for i in 1:(num_channels - 1)
             if daisy && i > 8
                 j = i - 8 # daisy packet channels 9 through 16
                 chan[i, sigpos:sigpos + 2] .= reverse(data2[j * 3:j * 3 + 2])
@@ -624,7 +618,7 @@ function makeBDFplusrecord(
         recbytes[(i - 1) * siglen + 1:i * siglen] = view(chan, i, :)
     end
     rec = Array{Int32, 1}(undef, div(reclen, 3))
-    for i in 1:3:reclen - 1
+    for i in 1:3:(reclen - 1)
         rec[div(i, 3) + 1] = Int(EDFPlus.merge3bytes((
             recbytes[i],
             recbytes[i + 1],
@@ -646,9 +640,9 @@ This default function simply logs the records as received.
 This function, a callback, can in practice be used to do realtime fft,
 spike detection, BCI, etc. Substitute your function taking those arguments
 for this function in order to process the EEG data in real time.
-This function is the ``inspector`` function argument in functions below.
+This function is the \`\`inspector\`\` function argument in functions below.
 """
-nilfunc(bdfh, pcount, maxrecords) = info(logger, "Record $pcount of $maxrecords received.")
+nilfunc(_bdfh, pcount, maxrecords) = @info "Record $pcount of $maxrecords received."
 
 """
     _writeopenbcibdfplus(path, ip_board, ip_ours, records, num_signals, recordchannels,
@@ -656,12 +650,13 @@ nilfunc(bdfh, pcount, maxrecords) = info(logger, "Record $pcount of $maxrecords 
                           locallogging,logSD,accelannotations,impedancetest,maketestwave)
 
 Shared implementation backing `makeganglionbdfplus`, `makecyton8bdfplus`, and
-`makecyton16bdfplus`. `num_signals` is the board's signal channel count,
-`recordchannels` is that count plus the annotation channel, `basereclen` is the
-board's default record size in bytes (used to scale `packetinterval` when a
-caller supplies a non-default `recordsize`), and `daisy` indicates whether two
-packets must be combined per sample (cyton 16-channel board). See the public
-wrapper functions below for documentation of the remaining arguments.
+`makecyton16bdfplus`. 
+`num_signals` is the board's signal channel count,
+`recordchannels` is that count plus the annotation channel, 
+`basereclen` is the board's default record size in bytes (used to scale `packetinterval` when a
+caller supplies a non-default `recordsize`), and 
+`daisy` indicates whether twopackets must be combined per sample (cyton 16-channel board). 
+See the public wrapper functions below for documentation of the remaining arguments.
 """
 function _writeopenbcibdfplus(
     path,
@@ -723,9 +718,11 @@ function _writeopenbcibdfplus(
 end
 
 """
-    makeganglionbdfplus(path, ip_board, ip_ours, records; idfile,inspector,portnum,recordsize,fs,latency,locallogging,logSD,accelannotations,impedancetest,maketestwave)
+    makeganglionbdfplus(path, ip_board, ip_ours, records; idfile, inspector, portnum, recordsize, fs,
+        latency, locallogging, logSD, accelannotations, impedancetest, maketestwave)
 
 Set up and sample streaming ganglion board and write a BDF+ file as output.
+
 # Required arguments
 - path             pathname of BDF+ file to be written at end of recording run
 - ip_board         the ip number of the WiFi shield
@@ -786,9 +783,11 @@ function makeganglionbdfplus(
 end
 
 """
-    makecyton8bdfplus(path, ip_board, ip_ours, records; idfile,inspector,portnum,recordsize,fs,latency,locallogging,logSD,accelannotations,impedancetest,maketestwave)
+    makecyton8bdfplus(path, ip_board, ip_ours, records; idfile, inspector, portnum, recordsize, fs,
+        latency, locallogging, logSD, accelannotations, impedancetest, maketestwave)
 
 Set up and sample streaming cyton 8-channel board and write a BDF+ file as output.
+
 # Required arguments
 - path             pathname of BDF+ file to be written at end of recording run
 - ip_board         the ip number of the WiFi shield
@@ -849,16 +848,27 @@ function makecyton8bdfplus(
 end
 
 """
-    makecyton16bdfplus(path, ip_board, ip_ours, records; idfile,inspector,portnum,recordsize,fs,latency,locallogging,logSD,accelannotations,impedancetest,maketestwave)
-
-Set up cyton 16-channel board with daisy board for 16 signal channels and write a BDF+ file as output.
+    makecyton16bdfplus(path, ip_board, ip_ours, records; idfile, inspector, portnum, recordsize, fs,
+        latency, locallogging, logSD, accelannotations, impedancetest, maketestwave)
+Set up cyton 16-channel board with daisy board for 16 signal channels and write a BDF+
+file as output.
 # Required arguments
 - path             pathname of BDF+ file to be written at end of recording run
 - ip_board         the ip number of the WiFi shield
 - ip_ours          the ip number of the machine getting the stream, generally this computer
 - records          number of records to write, is same as seconds in file with defaults
-
 # Optional named arguments
+- idfile           optional JSON file for patient and machine data
+- inspector        logging or detection function, called once every BDF+ record
+- portnum          the port number to which the shield will stream data
+- recordsize       size of each record to write in bytes
+- fs               sampling rate, usually 250 == SAMPLE_RATE
+- latency          latency in microseconds, time between packets, default 15 msec
+- locallogging     true if loglevel is to be info rather than warn
+- logSD            true if should log to SD card for 14 sec
+- accelannotations true if accelerometer data to be recorded
+- impedancetest    true if impedance check to be done
+- maketestwave     true if squarewave test signal to be generated
 - idfile           optional JSON file for patient and machine data
 - inspector        logging or detection function, called once every BDF+ record
 - portnum          the port number to which the shield will stream data
