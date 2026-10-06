@@ -1,7 +1,7 @@
 """ OpenBCI.jl: EEG WiFi routines using OpenBCI Arduino hardware """
 module OpenBCI
 
-export makeganglionbdfplus, makecyton8bdfplus, makecyton16bdfplus
+export makeganglionbdfplus, makecyton8bdfplus, makecyton16bdfplus, nilfunc, rawOpenPCIboard, makeBDFplurecord, 
 
 using HTTP
 import HTTP: get, post
