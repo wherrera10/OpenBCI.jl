@@ -869,17 +869,6 @@ file as output.
 - accelannotations true if accelerometer data to be recorded
 - impedancetest    true if impedance check to be done
 - maketestwave     true if squarewave test signal to be generated
-- idfile           optional JSON file for patient and machine data
-- inspector        logging or detection function, called once every BDF+ record
-- portnum          the port number to which the shield will stream data
-- recordsize       size of each record to write in bytes
-- fs               sampling rate, usually 250 == SAMPLE_RATE
-- latency          latency in microseconds, time between packets, default 15 msec
-- locallogging     true if loglevel is to be info rather than warn
-- logSD            true if should log to SD card for 14 sec
-- accelannotations true if accelerometer data to be recorded
-- impedancetest    true if impedance check to be done
-- maketestwave     true if squarewave test signal to be generated
 """
 function makecyton16bdfplus(
     path,
