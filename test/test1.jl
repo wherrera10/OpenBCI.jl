@@ -137,7 +137,7 @@ const PATIENT_JSON = joinpath(@__DIR__, "patientdata.json")
 
     @testset "makechannelsignalparam" begin
         bdfh = OpenBCI.startBDFPluswritefile(4)
-        OpenBCI.makechannelsignalparam(bdfh, 60, OpenBCI.GANGLION_RECORDSIZE, 1.0, 4)
+        OpenBCI.makechannelsignalparam(bdfh, 60, OpenBCI.GANGLION_RECORD_SIZE, 1.0, 4)
         @test length(bdfh.signalparam) == 5
         @test bdfh.signalparam[1].physmin == OpenBCI.GANGLION_PHYSICAL_MINIMUM
         @test bdfh.signalparam[1].physmax == OpenBCI.GANGLION_PHYSICAL_MAXIMUM
@@ -150,7 +150,7 @@ const PATIENT_JSON = joinpath(@__DIR__, "patientdata.json")
         @test bdfh.annotationchannel == 5
 
         bdfh8 = OpenBCI.startBDFPluswritefile(8)
-        OpenBCI.makechannelsignalparam(bdfh8, 60, OpenBCI.CYTON8_RECORDSIZE, 1.0, 8)
+        OpenBCI.makechannelsignalparam(bdfh8, 60, OpenBCI.CYTON8_RECORD_SIZE, 1.0, 8)
         @test length(bdfh8.signalparam) == 9
         @test bdfh8.signalparam[1].physmin == OpenBCI.CYTON_PHYSICAL_MINIMUM
         @test bdfh8.signalparam[1].physmax == OpenBCI.CYTON_PHYSICAL_MAXIMUM
@@ -158,7 +158,7 @@ const PATIENT_JSON = joinpath(@__DIR__, "patientdata.json")
     end
 
     @testset "makeBDFplusrecord: basic ganglion (no daisy, no accel)" begin
-        reclen = OpenBCI.GANGLION_RECORDSIZE
+        reclen = OpenBCI.GANGLION_RECORD_SIZE
         num_channels = OpenBCI.GANGLION_RECORD_CHANNELS
         siglen = div(reclen, num_channels)
         nsamples = div(siglen, 3)
@@ -207,7 +207,7 @@ const PATIENT_JSON = joinpath(@__DIR__, "patientdata.json")
     end
 
     @testset "makeBDFplusrecord: daisy (cyton16) combines two packets per sample" begin
-        reclen = OpenBCI.CYTON16_RECORDSIZE
+        reclen = OpenBCI.CYTON16_RECORD_SIZE
         num_channels = OpenBCI.CYTON16_RECORD_CHANNELS
         siglen = div(reclen, num_channels)
         nsamples = div(siglen, 3)
@@ -254,7 +254,7 @@ const PATIENT_JSON = joinpath(@__DIR__, "patientdata.json")
     end
 
     @testset "makeBDFplusrecord: accelerometer annotation round trip" begin
-        reclen = OpenBCI.GANGLION_RECORDSIZE
+        reclen = OpenBCI.GANGLION_RECORD_SIZE
         num_channels = OpenBCI.GANGLION_RECORD_CHANNELS
         siglen = div(reclen, num_channels)
         nsamples = div(siglen, 3)
