@@ -7,7 +7,7 @@ OpenBCI board or network connection, so they run reliably in GitHub's CI.
 To test actual port connected hardware is mostly outside of a Github CI type test harness.
 To actually use the OpenBCI board in this testing, set the OPENBCI_RUN_HARDWARE_TESTS 
 environment variable to "true" add the variables OPENBCI_BOARD_IP = "the ip" and 
-OPENBCI_BOARD_PORT = "the port" so the board is reachable at the configured IP addresses.
+OPENBCI_HOST_IP = "the host computer ip" so the board is reachable at the configured IP addresses.
 """
 
 using Test, OpenBCI, Dates, Logging
@@ -319,7 +319,7 @@ const PATIENT_JSON = joinpath(@__DIR__, "patientdata.json")
     @testset "Hardware integration (requires realtime OpenBCI hardware)" begin
         # These exercise the actual WiFi/TCP path against real OpenBCI hardware
         # and are skipped by default since no board is available in CI. To run
-        # them, set OPENBCI_RUN_HARDWARE_TESTS=true and point
+        # them, set OPENBCI_RUN_HARDWARE_TESTS="true" and point
         # OPENBCI_BOARD_IP/OPENBCI_HOST_IP at a reachable board and host.
         if get(ENV, "OPENBCI_RUN_HARDWARE_TESTS", "false") == "true"
             boardIP = get(ENV, "OPENBCI_BOARD_IP", "192.168.1.2")
@@ -338,7 +338,9 @@ const PATIENT_JSON = joinpath(@__DIR__, "patientdata.json")
                 isfile(outfile) && rm(outfile)
             end
         else
-            @test_skip "set OPENBCI_RUN_HARDWARE_TESTS=true with a reachable board to run this test"
+            global_logger(ConsoleLogger(stderr, Logging.Info))
+            @info "Skipping hardware integration test. Set OPENBCI_RUN_HARDWARE_TESTS=true with a reachable board to run this test."
+            @info "You would also need to specify OPENBCI_BOARD_IP and OPENBCI_HOST_IP in ENV to point at a reachable board and host."
         end
     end
 
