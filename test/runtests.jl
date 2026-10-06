@@ -1,6 +1,5 @@
 using OpenBCI
-using Base.Test
+using Test
+
 # Run tests
-
-include("test1.jl")
-
+@time include("test1.jl")
