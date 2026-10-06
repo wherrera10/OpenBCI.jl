@@ -21,7 +21,7 @@ const DEFAULT_STREAM_PORT = 5020 # streaming port, obscure zenginkyo-1 is 5020
 # record size in bytes (3 bytes/sample * fs * recordchannels)
 const GANGLION_NUM_SIGNALS = 4
 const GANGLION_RECORD_CHANNELS = 5
-const GANGLION_RECORDSIZE = 3750
+const GANGLION_RECORD_SIZE = 3750
 const CYTON8_NUM_SIGNALS = 8
 const CYTON8_RECORD_CHANNELS = 9
 const CYTON8_RECORD_SIZE = 6750
@@ -750,7 +750,7 @@ function makeganglionbdfplus(
     idfile = "",
     inspector = nilfunc,
     portnum = DEFAULT_STREAM_PORT,
-    recordsize = GANGLION_RECORDSIZE,
+    recordsize = GANGLION_RECORD_SIZE,
     fs = SAMPLE_RATE,
     latency = 15000,
     locallogging = true,
@@ -766,7 +766,7 @@ function makeganglionbdfplus(
         records,
         GANGLION_NUM_SIGNALS,
         GANGLION_RECORD_CHANNELS,
-        GANGLION_RECORDSIZE,
+        GANGLION_RECORD_SIZE,
         false;
         idfile = idfile,
         inspector = inspector,
