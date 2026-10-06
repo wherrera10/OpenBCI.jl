@@ -3,7 +3,7 @@
 Julia interface to the WiFi connected OpenBCI EEG hardware.
 
 
-![Description](assets//gangliongirl.png)
+![Description](gangliongirl.png)
 
 See the /examples for recording to a standard EEG format file.
     
