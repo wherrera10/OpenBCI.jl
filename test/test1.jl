@@ -12,8 +12,7 @@ OPENBCI_BOARD_PORT = "the port" so the board is reachable at the configured IP a
 using Test
 using OpenBCI, Dates, Logging
 
-# Quiet the module's own logging during tests so output stays focused on
-# test results, and warnings about no hardware connected as silenced during tests
+# This may be a CI run, so try to silence warnings about no hardware connected
 global_logger(ConsoleLogger(stderr, Logging.Error))
 
 # Patient type data in JSON format file in this directory for testing purposes
