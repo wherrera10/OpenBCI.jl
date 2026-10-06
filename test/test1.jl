@@ -10,11 +10,11 @@ environment variable to "true" add the variables OPENBCI_BOARD_IP = "the ip" and
 OPENBCI_BOARD_PORT = "the port" so the board is reachable at the configured IP addresses.
 """
 using Test
-using OpenBCI, Dates, Memento
+using OpenBCI, Dates, Logging
 
 # Quiet the module's own logging during tests so output stays focused on
 # test results, and warnings about no hardware connected as silenced during tests
-Memento.setlevel!(OpenBCI.logger, "error")
+global_logger(ConsoleLogger(stderr, Logging.Error))
 
 # Patient type data in JSON format file in this directory for testing purposes
 const PATIENT_JSON = joinpath(@__DIR__, "patientdata.json")
